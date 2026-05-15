@@ -1,0 +1,14 @@
+# Python Environment
+ghostenv/
+__pycache__/
+*.pyc
+
+# Database & Logs
+agency.db-shm
+agency.db-wal
+logs/
+
+# Scraping & Temporary Data
+raw_leads.json
+filtered_leads.json
+built_sites/

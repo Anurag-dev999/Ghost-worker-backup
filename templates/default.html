@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{BUSINESS_NAME}}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; }
+
+  .hero {
+    background: linear-gradient(135deg, #0f4c75 0%, #1b6ca8 50%, #2196f3 100%);
+    color: white;
+    padding: 80px 20px 60px;
+    text-align: center;
+    min-height: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .hero-badge {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: white;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 6vw, 52px);
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 20px;
+    max-width: 700px;
+  }
+  .hero p {
+    font-size: clamp(15px, 3vw, 18px);
+    opacity: 0.9;
+    max-width: 560px;
+    line-height: 1.6;
+    margin-bottom: 36px;
+  }
+  .hero-cta {
+    display: inline-block;
+    background: white;
+    color: #0f4c75;
+    padding: 14px 36px;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 16px;
+    text-decoration: none;
+    transition: transform 0.2s;
+  }
+  .hero-cta:hover { transform: scale(1.05); }
+
+  .trust-bar {
+    background: #f8f9ff;
+    border-bottom: 1px solid #e8eaf6;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    flex-wrap: wrap;
+  }
+  .trust-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #555;
+    font-weight: 500;
+  }
+  .trust-icon { font-size: 20px; }
+
+  .about {
+    padding: 70px 20px;
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  .section-label {
+    color: #1b6ca8;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .about h2 {
+    font-size: clamp(24px, 4vw, 36px);
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: #0f4c75;
+  }
+  .about p {
+    font-size: 16px;
+    line-height: 1.8;
+    color: #444;
+  }
+
+  .divider {
+    width: 60px;
+    height: 4px;
+    background: #2196f3;
+    margin: 0 auto 30px;
+    border-radius: 2px;
+  }
+
+  .services {
+    background: #f0f4ff;
+    padding: 60px 20px;
+    text-align: center;
+  }
+  .services h2 {
+    font-size: clamp(22px, 4vw, 32px);
+    color: #0f4c75;
+    margin-bottom: 40px;
+    font-weight: 700;
+  }
+  .services-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .service-card {
+    background: white;
+    border-radius: 12px;
+    padding: 28px 20px;
+    box-shadow: 0 2px 12px rgba(15,76,117,0.08);
+  }
+  .service-icon { font-size: 32px; margin-bottom: 12px; }
+  .service-card h3 {
+    font-size: 16px;
+    color: #0f4c75;
+    font-weight: 600;
+  }
+
+  .contact {
+    padding: 70px 20px;
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .contact h2 {
+    font-size: clamp(22px, 4vw, 32px);
+    color: #0f4c75;
+    margin-bottom: 16px;
+    font-weight: 700;
+  }
+  .contact p {
+    color: #555;
+    font-size: 16px;
+    margin-bottom: 32px;
+    line-height: 1.6;
+  }
+  .whatsapp-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: #25d366;
+    color: white;
+    padding: 16px 40px;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 17px;
+    text-decoration: none;
+    box-shadow: 0 4px 20px rgba(37,211,102,0.35);
+    transition: transform 0.2s;
+  }
+  .whatsapp-btn:hover { transform: scale(1.05); }
+
+  footer {
+    background: #0f4c75;
+    color: rgba(255,255,255,0.8);
+    text-align: center;
+    padding: 28px 20px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  footer strong { color: white; }
+
+  @media (max-width: 600px) {
+    .trust-bar { gap: 20px; }
+    .hero { padding: 60px 20px 50px; }
+  }
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="hero-badge">{{CITY}} · Trusted Healthcare</div>
+  <h1>{{HERO_HEADLINE}}</h1>
+  <p>{{ABOUT_CONTENT}}</p>
+  <a href="https://wa.me/{{PHONE_CLEAN}}" class="hero-cta">Book Appointment Now</a>
+</section>
+
+<div class="trust-bar">
+  <div class="trust-item">
+    <span class="trust-icon">⭐</span>
+    <span>{{RATING}} Star Rating</span>
+  </div>
+  <div class="trust-item">
+    <span class="trust-icon">💬</span>
+    <span>{{REVIEWS_COUNT}}+ Patient Reviews</span>
+  </div>
+  <div class="trust-item">
+    <span class="trust-icon">✅</span>
+    <span>Verified Clinic</span>
+  </div>
+  <div class="trust-item">
+    <span class="trust-icon">📍</span>
+    <span>{{CITY}}</span>
+  </div>
+</div>
+
+<section class="about">
+  <p class="section-label">About Us</p>
+  <div class="divider"></div>
+  <h2>Why Patients Choose {{BUSINESS_NAME}}</h2>
+  <p>{{ABOUT_CONTENT}}</p>
+</section>
+
+<section class="services">
+  <h2>Our Services</h2>
+  <div class="services-grid">
+    <div class="service-card">
+      <div class="service-icon">🩺</div>
+      <h3>Expert Consultation</h3>
+    </div>
+    <div class="service-card">
+      <div class="service-icon">🔬</div>
+      <h3>Advanced Diagnosis</h3>
+    </div>
+    <div class="service-card">
+      <div class="service-icon">💊</div>
+      <h3>Treatment Plans</h3>
+    </div>
+    <div class="service-card">
+      <div class="service-icon">📅</div>
+      <h3>Easy Appointments</h3>
+    </div>
+  </div>
+</section>
+
+<section class="contact">
+  <p class="section-label">Get In Touch</p>
+  <div class="divider"></div>
+  <h2>Ready to Visit Us?</h2>
+  <p>{{ABOUT_CONTENT}}</p>
+  <a href="https://wa.me/{{PHONE_CLEAN}}" class="whatsapp-btn">
+    <span>💬</span> Chat on WhatsApp
+  </a>
+</section>
+
+<footer>
+  <strong>{{BUSINESS_NAME}}</strong><br>
+  {{FOOTER_TEXT}}<br><br>
+  {{ADDRESS}}
+</footer>
+
+<!-- Tracker pixel — silent, instant -->
+<img src="{{TRACKER_URL}}/pixel" width="1" height="1" style="display:none" alt="">
+
+</body>
+</html>
