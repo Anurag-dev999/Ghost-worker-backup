@@ -73,13 +73,13 @@ def call_ai(prompt, label):
         return result
     except Exception as e:
         logger.warning(f"  Groq failed ({label}): {e} — trying Gemini")
-    try:
-        result = call_gemini(prompt)
-        logger.info(f"  Gemini OK: {label}")
-        return result
-    except Exception as e:
-        logger.error(f"  Both APIs failed ({label}): {e}")
-        return None
+#    try:
+ #       result = call_gemini(prompt)
+  #      logger.info(f"  Gemini OK: {label}")
+   #     return result
+    #except Exception as e:
+     #   logger.error(f"  Both APIs failed ({label}): {e}")
+      #  return None
 
 
 # ── PROMPTS ───────────────────────────────────────────────

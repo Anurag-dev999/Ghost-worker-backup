@@ -194,12 +194,12 @@ def generate_dual_content(lead):
     raw    = None
 
     # Gemini primary
-    try:
-        logger.info("  Trying Gemini...")
-        raw = call_gemini(prompt)
-        logger.info("  Gemini responded")
-    except Exception as e:
-        logger.warning(f"  Gemini failed: {e}")
+#    try:
+ #       logger.info("  Trying Gemini...")
+  #      raw = call_gemini(prompt)
+   #     logger.info("  Gemini responded")
+    #except Exception as e:
+     #   logger.warning(f"  Gemini failed: {e}")
 
     # Groq fallback
     if not raw:

@@ -1,9 +1,12 @@
+
 {
   "scrape_interval_hours": 48,
   "pipeline_interval_hours": 24,
-  "lifecycle_check_hours": 7,
+  "lifecycle_check_hours": 6,
   "scheduled_queries": [
-    "gyms in lucknow"
+    "gyms in Lucknow India",
+    "dental clinics in Ludhiana Punjab India",
+    "salons in Amritsar Punjab India"
   ],
-  "last_updated": "2026-05-13 17:02:43"
+  "last_updated": ""
 }

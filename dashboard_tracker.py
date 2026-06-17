@@ -525,7 +525,23 @@ td{padding:11px 12px;vertical-align:middle}
       <div class="acts">
         {% if lead.s3_url %}<a class="btn bk bs" href="{{ lead.s3_url }}" target="_blank">Site</a>{% endif %}
         {% if lead.tracker_url %}<button class="btn bk bs copy-btn" data-url="{{ lead.tracker_url }}">Link</button>{% endif %}
-        {% if lead.phone %}<a class="btn bg bs" href="https://wa.me/{{ lead.phone|replace('+','')|replace(' ','')|replace('-','') }}" target="_blank">WA</a>{% endif %}
+        
+        
+        {% if lead.phone %}
+        {% set wa_msg = '' %}
+        {% if lead.outreach_stage == 1 %}{% set wa_msg = lead.wa_draft_1 or '' %}
+        {% elif lead.outreach_stage == 2 %}{% set wa_msg = lead.wa_draft_hot or lead.wa_draft_1 or '' %}
+        {% elif lead.outreach_stage == 3 %}{% set wa_msg = lead.wa_draft_2 or '' %}
+        {% elif lead.outreach_stage == 4 %}{% set wa_msg = lead.wa_draft_3 or '' %}
+        {% elif lead.outreach_stage == 5 %}{% set wa_msg = lead.wa_draft_4 or '' %}
+        {% endif %}
+        <a class="btn bg bs"
+        href="https://wa.me/{{ lead.phone|replace('+','')|replace(' ','')|replace('-','') }}{% if wa_msg %}?text={{ wa_msg|replace('[LINK]', lead.tracker_url or '')|urlencode }}{% endif %}"
+        target="_blank"
+        title="Stage {{ lead.outreach_stage }} message">WA S{{ lead.outreach_stage }}</a>
+        {% endif %}
+        
+
         {% if lead.outreach_paused %}
         <button class="btn bb bs pause-btn" data-id="{{ lead.id }}" data-paused="1" style="background:#d29922">▶ Resume</button>
         {% else %}
