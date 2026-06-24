@@ -2,6 +2,7 @@ import sqlite3
 import os
 import re
 import logging
+import requests
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from dotenv import load_dotenv
@@ -33,6 +34,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_server_domain():
+    """Get server domain from env or auto-detect public IP."""
+    domain = os.getenv('SERVER_DOMAIN', '').strip()
+    if domain:
+        return domain
+    try:
+        ip = requests.get('https://api.ipify.org', timeout=5).text.strip()
+        return f"http://{ip}:5000"
+    except Exception:
+        return "http://localhost:5000"
+
+
 def get_ai_complete_leads():
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -50,30 +63,46 @@ def get_ai_complete_leads():
 
 
 def load_template(niche):
-    # Try niche-specific template first, fall back to default
-    niche_file   = os.path.join(TEMPLATE_DIR, f"{niche}.html")
+    niche_clean  = (niche or 'default').lower().strip()
+    
+    # Normalize compound niches to their primary template
+    niche_map = {
+        'cafe/restaurant': 'cafe',
+        'restaurant/cafe': 'cafe',
+        'dental clinic':   'clinic',
+        'medical clinic':  'clinic',
+        'beauty salon':    'salon',
+        'hair salon':      'salon',
+        'fitness center':  'gym',
+        'fitness centre':  'gym',
+    }
+    niche_clean = niche_map.get(niche_clean, niche_clean)
+    # Also handle slash — take first word before /
+    if '/' in niche_clean:
+        niche_clean = niche_clean.split('/')[0].strip()
+
+    niche_file   = os.path.join(TEMPLATE_DIR, f"{niche_clean}.html")
     default_file = os.path.join(TEMPLATE_DIR, "default.html")
 
     if os.path.exists(niche_file):
         with open(niche_file, 'r', encoding='utf-8') as f:
-            logger.info(f"  Template: {niche}.html")
-            return f.read()
+            logger.info(f"  Template: {niche_clean}.html")
+            return f.read(), f"{niche_clean}.html"
 
     if os.path.exists(default_file):
         with open(default_file, 'r', encoding='utf-8') as f:
-            logger.info(f"  Template: default.html (fallback)")
-            return f.read()
+            logger.info(f"  Template: default.html (fallback for '{niche_clean}')")
+            return f.read(), "default.html"
 
-    logger.error("No template found — not even default.html")
-    return None
+    logger.error(f"No template found for niche '{niche_clean}' and no default.html")
+    return None, None
 
 
 def clean_phone(phone):
-    # Remove everything except digits and leading +
+    """Convert any phone format to digits-only Indian number."""
     if not phone:
         return ''
     digits = re.sub(r'[^\d]', '', phone)
-    # Indian numbers: ensure 91 country code
     if digits.startswith('91') and len(digits) >= 12:
         return digits
     if len(digits) == 10:
@@ -81,42 +110,78 @@ def clean_phone(phone):
     return digits
 
 
-def inject_content(template, lead, tracker_url):
+def build_replacements(lead, tracker_url):
+    """
+    Universal placeholder map.
+    Covers ALL placeholder tags any template might use.
+    Adding a new template never requires editing this file —
+    just use these standard tags in your HTML.
+    """
     phone_clean = clean_phone(lead.get('phone', ''))
 
-    replacements = {
-        '{{BUSINESS_NAME}}': lead.get('business_name', ''),
-        '{{HERO_HEADLINE}}': lead.get('ai_headline', ''),
-        '{{ABOUT_CONTENT}}': lead.get('ai_about', ''),
-        '{{FOOTER_TEXT}}':   lead.get('ai_footer', ''),
-        '{{CITY}}':          lead.get('city', ''),
-        '{{RATING}}':        str(lead.get('rating', '')),
-        '{{REVIEWS_COUNT}}': str(lead.get('reviews_count', '')),
-        '{{PHONE_CLEAN}}':   phone_clean,
-        '{{ADDRESS}}':       lead.get('address', ''),
-        '{{TRACKER_URL}}':   tracker_url,
+    # Core fields — available for every lead
+    hero    = lead.get('hero_a') or lead.get('ai_headline') or ''
+    about   = lead.get('about_a') or lead.get('ai_about') or ''
+    footer  = lead.get('ai_footer') or ''
+    svc_a   = lead.get('services_a') or ''
+    hero_b  = lead.get('hero_b') or hero
+    about_b = lead.get('about_b') or about
+    svc_b   = lead.get('services_b') or svc_a
+
+    return {
+        # ── Identity ────────────────────────────────────
+        '{{BUSINESS_NAME}}':  lead.get('business_name', ''),
+        '{{CITY}}':           lead.get('city', ''),
+        '{{RATING}}':         str(lead.get('rating', '') or ''),
+        '{{REVIEWS_COUNT}}':  str(lead.get('reviews_count', '') or ''),
+        '{{PHONE_CLEAN}}':    phone_clean,
+        '{{ADDRESS}}':        lead.get('address', ''),
+        '{{TRACKER_URL}}':    tracker_url,
+
+        # ── Single-vibe placeholders ─────────────────────
+        # Use these in single-design templates (cafe, gym, salon etc.)
+        '{{HERO}}':           hero,
+        '{{ABOUT}}':          about,
+        '{{FOOTER_TEXT}}':    footer,
+        '{{SERVICES}}':       svc_a,
+
+        # ── Alpha vibe placeholders ──────────────────────
+        # Use these in dual-vibe templates
+        '{{HERO_A}}':         hero,
+        '{{ABOUT_A}}':        about,
+        '{{FOOTER_A}}':       footer,
+        '{{SERVICES_A}}':     svc_a,
+
+        # ── Beta vibe placeholders ───────────────────────
+        '{{HERO_B}}':         hero_b,
+        '{{ABOUT_B}}':        about_b,
+        '{{FOOTER_B}}':       footer,
+        '{{SERVICES_B}}':     svc_b,
+
+        # ── Legacy support (old clinic template) ─────────
+        '{{HERO_HEADLINE}}':  hero,
+        '{{ABOUT_CONTENT}}':  about,
     }
 
+
+def inject_content(template, lead, tracker_url):
+    replacements = build_replacements(lead, tracker_url)
     html = template
     for placeholder, value in replacements.items():
         html = html.replace(placeholder, str(value) if value else '')
-
     return html
 
 
 def save_html(html, phone):
-    # File name is the phone number — unique per lead
     phone_clean = re.sub(r'[^\d]', '', phone)
     filename    = f"{phone_clean}.html"
     filepath    = os.path.join(OUTPUT_DIR, filename)
-
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(html)
-
     return filepath, filename
 
 
-def update_db_built(lead_id, filename, template_used):
+def update_db_built(lead_id, template_used):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -134,13 +199,16 @@ def update_db_built(lead_id, filename, template_used):
 def run_builder():
     logger.info("Ghost Worker Builder — Starting")
 
+    server_domain = get_server_domain()
+    logger.info(f"Server domain: {server_domain}")
+
     leads = get_ai_complete_leads()
     if not leads:
         logger.info("No AI_Complete leads — run ai_brain.py first")
         return
 
-    built   = 0
-    failed  = 0
+    built  = 0
+    failed = 0
 
     for lead in leads:
         lead_id = lead['id']
@@ -148,36 +216,31 @@ def run_builder():
         niche   = lead.get('niche') or 'default'
         phone   = lead.get('phone', '')
 
-        logger.info(f"\n── Building: {name[:50]} (ID: {lead_id})")
+        logger.info(f"\n── Building: {name[:50]} (ID:{lead_id})")
 
-        # Placeholder tracker URL — will be replaced by real URL after S3 deploy
-        tracker_url = f"http://YOUR_SERVER_IP:5000/view/{lead_id}"
+        tracker_url   = f"{server_domain}/view/{lead_id}"
+        template, template_used = load_template(niche)
 
-        template = load_template(niche)
         if not template:
-            logger.error(f"  No template found for niche '{niche}' — skipping")
+            logger.error(f"  Skipping — no template available")
             failed += 1
             continue
 
         try:
-            html     = inject_content(template, lead, tracker_url)
+            html               = inject_content(template, lead, tracker_url)
             filepath, filename = save_html(html, phone)
-
-            # Detect which template was actually used
-            niche_file = os.path.join(TEMPLATE_DIR, f"{niche}.html")
-            template_used = f"{niche}.html" if os.path.exists(niche_file) else "default.html"
-
-            update_db_built(lead_id, template_used, template_used)
+            update_db_built(lead_id, template_used)
 
             built += 1
-            logger.info(f"  Built   : {filepath}")
-            logger.info(f"  Template: {template_used}")
+            size_kb = os.path.getsize(filepath) / 1024
+            logger.info(f"  Built    : {filepath}")
+            logger.info(f"  Template : {template_used}")
+            logger.info(f"  Size     : {size_kb:.1f} KB")
 
         except Exception as e:
             logger.error(f"  Build failed: {e}")
             failed += 1
 
-    # Summary
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         ready = conn.execute(
@@ -186,8 +249,8 @@ def run_builder():
 
     logger.info(f"\n{'='*50}")
     logger.info(f"BUILDER COMPLETE")
-    logger.info(f"Built   : {built}")
-    logger.info(f"Failed  : {failed}")
+    logger.info(f"Built      : {built}")
+    logger.info(f"Failed     : {failed}")
     logger.info(f"Ready for S3: {ready}")
     logger.info(f"{'='*50}")
     logger.info("Next step: python3 s3_deployer.py")

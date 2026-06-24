@@ -32,8 +32,13 @@ logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY   = os.getenv("GROQ_OUTREACH_KEY") or os.getenv("GROQ_API_KEY")
-AGENCY_NAME    = os.getenv("AGENCY_NAME", "LaunchPad Web")
-AGENCY_EMAIL   = os.getenv("SMTP_EMAIL", "hello@fixingmyself.sbs")
+FOUNDER_NAME   = "Anurag"
+FOUNDER_TITLE  = "Founder"
+FOUNDER_PHONE  = "+91 78148 71810"
+FOUNDER_EMAIL  = "dev.anurag999@gmail.com"
+AGENCY_NAME    = "LaunchPad Web"
+WA_SIGNATURE   = f"\n\n— {FOUNDER_NAME}\n{FOUNDER_TITLE}, {AGENCY_NAME}\n{FOUNDER_PHONE}"
+EMAIL_SIGNATURE = f"\n\nWarm regards,\n{FOUNDER_NAME}\n{FOUNDER_TITLE} — {AGENCY_NAME}\n📞 {FOUNDER_PHONE}\n✉ {FOUNDER_EMAIL}"
 
 
 # ── API CALLERS ───────────────────────────────────────────
@@ -84,6 +89,7 @@ def call_ai(prompt, label):
 
 # ── PROMPTS ───────────────────────────────────────────────
 
+
 def build_prompt(lead, msg_type, channel):
     name    = lead['business_name']
     city    = lead['city'] or 'your city'
@@ -92,130 +98,156 @@ def build_prompt(lead, msg_type, channel):
     tracker = lead['tracker_url'] or ''
     niche   = lead['niche'] or 'business'
 
-    context = f"""Business: {name}
-City: {city}
-Niche: {niche}
-Google Rating: {rating} stars
-Reviews: {reviews}
-Demo site link: {tracker}
-Agency: {AGENCY_NAME} ({AGENCY_EMAIL})"""
+    # Clean business name
+    short_name = name.split('-')[0].split('|')[0].strip()
 
+    context = f"""Business Details:
+- Name: {short_name}
+- City: {city}
+- Niche: {niche}
+- Rating: {rating} stars
+- Reviews: {reviews}
+- Demo Link: {tracker}
+- Agency: {AGENCY_NAME}"""
+
+    # ── WHATSAPP PROMPTS (Hinglish, Casual, Conversational) ──
     if channel == 'whatsapp':
-        rules = """Rules:
-- Hinglish (Hindi + English mix) like a real person texting
-- Warm and human — NOT corporate or spammy
-- Include business name naturally
-- Include demo link at the end
-- Max 100 words
-- Max 2 emojis
-- End with ONE question to get a reply
-- Return ONLY the message text, nothing else"""
+        
+        base_wa_rules = """RULES:
+- Language: Natural Hinglish (Roman Hindi mixed with English).
+- Tone: Friendly, respectful, energetic. Like a real person texting on WhatsApp.
+- NO formal greetings (No "Dear Sir", "Greetings").
+- Emojis: Max 1 or 2, placed naturally.
+- Output: Return ONLY the message text. No quotes, no intro, no extra text."""
 
-        messages = {
-            'cold': f"""You are writing a WhatsApp cold intro message for {AGENCY_NAME}.
+        if msg_type == 'cold':
+            return f"""Write a cold WhatsApp message to {short_name}.
 {context}
 
-{rules}
+TONE REFERENCE (Mimic this exact style):
+"Hello [Business Name] team!
+Maine abhi aapka business dekha online aur aapke reviews sach mein kaafi amazing hain. Great job! 🔥
+Mujhe laga aapke business ki online presence aur bhi better ho sakti hai, toh maine aapke liye ek custom, fast-loading website banayi hai—bilkul free.
+Website already live aur ready hai. Aap yahan click karke free mein apna naya design dekh sakte hain: [Insert Your Link Here]
+Zaroor check karna aur batana kaisa laga!"
 
-Message goal: First ever contact. Tell them we built them a FREE demo website.
-They have {reviews} Google reviews but NO website — they are losing customers online.
-Sound helpful, not salesy. Create curiosity about their demo site link.""",
+Now, write the message for {short_name} using the exact tone above. 
+- Mention their {reviews} reviews and {rating} stars specifically to make it personal.
+- Naturally include the demo link: {tracker}
+{base_wa_rules}"""
 
-            'hot': f"""You are writing a WhatsApp HOT STRIKE message for {AGENCY_NAME}.
+        elif msg_type == 'hot':
+            return f"""Write a 'Hot Strike' WhatsApp message to {short_name}.
 {context}
 
-{rules}
+SITUATION: They literally JUST opened the demo link we sent them. 
+GOAL: Act excited that they are checking it out.
 
-IMPORTANT: This lead JUST opened their demo website RIGHT NOW (within last 3 minutes).
-Message goal: Strike while iron is hot — loha garam hai energy.
-Start with something referencing they just saw their site.
-Sound excited and personal — this is the most powerful message.
-Make it feel like you knew they were looking at it.""",
+Draft a short message (3-4 lines) in the same natural Hinglish tone.
+Example vibe: "Arre {short_name} team! Maine dekha aapne abhi website open ki..."
+- Ask them how the design looks on their phone.
+- Do NOT sound creepy. Make it sound like perfectly timed excitement.
+- Include the demo link naturally: {tracker}
+{base_wa_rules}"""
 
-            'followup1': f"""You are writing WhatsApp Followup 1 for {AGENCY_NAME}.
+        elif msg_type == 'followup1':
+            return f"""Write the first follow-up WhatsApp message to {short_name}.
 {context}
 
-{rules}
+SITUATION: We sent the link 2 days ago, no reply.
+GOAL: Friendly nudge.
 
-Context: We sent them a cold intro 48 hours ago. No reply yet.
-Message goal: Gentle reminder. Add social proof — {reviews} people already trust them.
-Tone: Casual, not pushy. "Bas ek baar dekh lo" energy.
-Do NOT sound desperate.""",
+Draft a short message (3-4 lines) in natural Hinglish.
+- Acknowledge they are probably busy with their business.
+- Suggest them to just quickly open it on their mobile device because the mobile view is very smooth.
+- Include the demo link naturally: {tracker}
+{base_wa_rules}"""
 
-            'followup2': f"""You are writing WhatsApp Followup 2 for {AGENCY_NAME}.
+        elif msg_type == 'followup2':
+            return f"""Write the second follow-up WhatsApp message to {short_name}.
 {context}
 
-{rules}
+SITUATION: 3rd message, no reply. We need an answer so we can move on.
+GOAL: Honest scarcity.
 
-Context: Two followups sent. Still no reply. This is last regular followup.
-Message goal: Create urgency. Limited time framing.
-Tone: Friendly urgency — "sirf is hafte ke liye" type energy.
-Mention we are offering this to only one business per niche per city.""",
+Draft a short message (3-4 lines) in natural Hinglish.
+- Be direct: Tell them we only make 1 free site per niche in {city}.
+- If they don't need it, ask them to just reply "No" so we can offer this exact design to another {niche} in the area.
+- Keep it polite, no attitude. 
+- Include the demo link: {tracker}
+{base_wa_rules}"""
 
-            'final': f"""You are writing a final WhatsApp goodbye message for {AGENCY_NAME}.
+        elif msg_type == 'final':
+            return f"""Write the final goodbye WhatsApp message to {short_name}.
 {context}
 
-{rules}
+SITUATION: 30 days passed, no reply. Withdrawing the offer.
+GOAL: Close the door gracefully.
 
-Context: 30 days passed. No response at all. This is the last message ever.
-Message goal: Polite withdrawal of the offer. Leave door open.
-Tone: Respectful goodbye. No pressure. Mention we will give this slot to another business.
-End: If they ever want, they can reach back."""
-        }
-        return messages.get(msg_type, '')
+Draft a short message (3-4 lines) in natural Hinglish.
+- Tell them we are taking down the demo site today.
+- Say: "Since {short_name} has such great {rating}-star reviews, you truly deserve a great online presence."
+- Leave the door open: "Future mein kabhi website chahiye ho toh yaad karna."
+- Include the demo link one last time: {tracker}
+{base_wa_rules}"""
 
+
+    # ── EMAIL PROMPTS (Professional but Warm, JSON Output) ──
     elif channel == 'email':
-        rules = """Rules:
-- Professional but warm tone
-- Subject line must mention their business name specifically
-- Body max 120 words
-- Include the demo link
-- End with clear call to action
-- Return ONLY valid JSON: {"subject": "...", "body": "..."}
-- No markdown, no code blocks, raw JSON only"""
 
-        messages = {
-            'cold': f"""You are writing a cold intro email for {AGENCY_NAME}.
+        base_email_rules = f"""RULES:
+- Tone: Professional, warm, human (NOT corporate robot).
+- Keep it concise (under 100 words).
+- MUST include the tracker link: {tracker}
+- Sign-off as {AGENCY_NAME}.
+- CRITICAL: Return ONLY valid JSON in this exact format: {{"subject": "your subject", "body": "your body text"}}
+- Do not use markdown, do not wrap in ```json, just raw JSON text."""
+
+        if msg_type == 'cold':
+            return f"""Write a cold outreach email to {short_name}.
 {context}
+SITUATION: Reaching out for the first time with a pre-built free website.
+Subject: Catchy, mentions {short_name}.
+Body: 
+- Compliment their {reviews} reviews.
+- State we proactively built a custom demo website for them.
+- Provide the link.
+- End with a low-pressure question.
+{base_email_rules}"""
 
-{rules}
-
-Email goal: First contact. Tell them we built a FREE demo website for their business.
-Subject must create curiosity — reference their business name.""",
-
-            'hot': f"""You are writing a HOT STRIKE email for {AGENCY_NAME}.
+        elif msg_type == 'hot':
+            return f"""Write a hot strike email to {short_name}.
 {context}
+SITUATION: They just visited the demo site right now.
+Subject: "Quick question about the site" or similar.
+Body: Notice they checked it out, ask if it loaded smoothly or if they have any initial thoughts on the design. Keep it super short.
+{base_email_rules}"""
 
-{rules}
-
-Email goal: They just viewed their demo site. Follow up on their interest immediately.
-Subject must reference that they checked it out.""",
-
-            'followup1': f"""You are writing Followup 1 email for {AGENCY_NAME}.
+        elif msg_type == 'followup1':
+            return f"""Write Followup 1 email to {short_name}.
 {context}
+SITUATION: 2 days later, no reply.
+Subject: Checking in.
+Body: Acknowledge they are busy. Mention that local {niche} clients in {city} are searching online, and this site will help them capture that traffic. Remind them it's free to look.
+{base_email_rules}"""
 
-{rules}
-
-Email goal: 48h after intro. Gentle reminder.
-Mention their {reviews} Google reviews as social proof.""",
-
-            'followup2': f"""You are writing Followup 2 email for {AGENCY_NAME}.
+        elif msg_type == 'followup2':
+            return f"""Write Followup 2 email to {short_name}.
 {context}
+SITUATION: Final regular follow-up. Genuine scarcity.
+Subject: Moving on / One slot per city.
+Body: Explain we only partner with one {niche} in {city}. Ask for a simple yes/no if they want to keep the design, otherwise we will offer the framework to another local business.
+{base_email_rules}"""
 
-{rules}
-
-Email goal: Last regular followup. Urgency framing.
-Limited time offer — mention only one business per niche gets this.""",
-
-            'final': f"""You are writing a final goodbye email for {AGENCY_NAME}.
+        elif msg_type == 'final':
+            return f"""Write the final closure email to {short_name}.
 {context}
+SITUATION: 30 days, no reply. Taking down the site.
+Subject: Taking down the demo for {short_name}.
+Body: Polite closure. We are removing the server link today. Compliment their business one last time. Tell them to reach out if they ever need help in the future.
+{base_email_rules}"""
 
-{rules}
-
-Email goal: 30 days passed, withdrawing offer politely.
-Leave door open for future."""
-        }
-        return messages.get(msg_type, '')
+    return ""
 
 
 def parse_email_json(raw):
@@ -251,8 +283,10 @@ def write_all_messages(lead):
     logger.info(f"\n── Writing messages: {name[:45]} (ID:{lead_id})")
 
     # ── WhatsApp messages ─────────────────────────────────
+
     wa_types = ['cold', 'hot', 'followup1', 'followup2', 'final']
     wa_cols  = ['wa_draft_1', 'wa_draft_hot', 'wa_draft_2', 'wa_draft_3', 'wa_draft_4']
+
     wa_results = {}
 
     for msg_type, col in zip(wa_types, wa_cols):
@@ -292,7 +326,7 @@ def write_all_messages(lead):
                     wa_draft_hot    = :wa_draft_hot,
                     wa_draft_2      = :wa_draft_2,
                     wa_draft_3      = :wa_draft_3,
-                    wa_draft_hot    = :wa_draft_hot,
+                    wa_draft_4      = :wa_draft_4,
                     email_draft_1   = :email_draft_1,
                     email_draft_hot = :email_draft_hot,
                     email_draft_2   = :email_draft_2,

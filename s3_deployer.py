@@ -111,7 +111,8 @@ def upload_to_s3(s3_client, filepath, filename):
 
 def update_html_tracker_url(filepath, lead_id, public_ip):
     # Replace the placeholder tracker URL with the real one
-    tracker_url = f"http://{public_ip}:{SERVER_PORT}/view/{lead_id}"
+    domain = os.getenv("SERVER_DOMAIN", f"http://{public_ip}:{SERVER_PORT}")
+    tracker_url = f"{domain}/view/{lead_id}"
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             html = f.read()

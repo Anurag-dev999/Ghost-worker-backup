@@ -1,12 +1,11 @@
-
 {
-  "scrape_interval_hours": 48,
-  "pipeline_interval_hours": 24,
+  "scrape_interval_hours": 13,
+  "pipeline_interval_hours": 1,
   "lifecycle_check_hours": 6,
   "scheduled_queries": [
-    "gyms in Lucknow India",
-    "dental clinics in Ludhiana Punjab India",
-    "salons in Amritsar Punjab India"
+    "cafes in Chandigarh Punjab India",
+    "cafes in Ludhiana Punjab India",
+    "cafes in Patiala Punjab India"
   ],
-  "last_updated": ""
+  "last_updated": "2026-06-24 21:54:53"
 }

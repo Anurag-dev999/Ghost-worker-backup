@@ -41,7 +41,7 @@ HOURS_FOLLOWUP1   = 48
 HOURS_FOLLOWUP2   = 48
 DAYS_FINAL        = 30
 DAYS_DELETE       = 5
-MINUTES_HOT       = 180   # 3 hours window for HOT strike
+MINUTES_HOT       = 180   # 3 hours window for HOT strike (not 3 min — gives you time to send manually)
 
 
 def get_db():
@@ -95,7 +95,6 @@ def send_email(to_email, subject, body):
         logger.error(f'  Email failed → {to_email}: {e}')
         return False
 
-
 def send_whatsapp_msg(phone, message, tracker_url):
     """Send WhatsApp via Evolution API."""
     if not phone or not message:
@@ -105,16 +104,10 @@ def send_whatsapp_msg(phone, message, tracker_url):
         if not check_connection():
             logger.warning("WhatsApp not connected — skipping WA send")
             return False
-        result = send_whatsapp(phone, message, tracker_url)
-        if result == "NO_WHATSAPP":
-            logger.warning(f"  {phone} not on WhatsApp — will try email only")
-            return "NO_WHATSAPP"
-        return result
+        return send_whatsapp(phone, message, tracker_url)
     except Exception as e:
         logger.error(f"WA send error: {e}")
         return False
-
-
 
 
 def advance_stage(conn, lead_id, new_stage, extra=None):
@@ -149,7 +142,8 @@ def stage_0_initial(conn, lead):
     """
     Stage 0 → 1
     New deployed lead. Write messages if missing, then mark ready.
-    Email and cold WA sent automatically.
+    WA cold draft is shown on dashboard for manual send.
+    Email sent automatically if email exists.
     """
     lead_id = lead['id']
     name    = lead['business_name']
@@ -176,18 +170,13 @@ def stage_0_initial(conn, lead):
         except Exception as e:
             logger.error(f'  Cold email parse error: {e}')
 
-    # Send cold WA automatically
-    if lead.get('wa_draft_1'):
-        msg = lead.get('wa_draft_1') or ''
-        send_whatsapp_msg(lead['phone'], msg, lead.get('tracker_url'))
-        
     advance_stage(conn, lead_id, 1, {
         'last_contacted': now_str(),
         'followup_count': 1,
     })
     logger.info(
         f'  Stage 0→1: {name[:35]} | '
-        f'Cold WA sent automatically'
+        f'Cold WA draft ready on dashboard'
     )
 
 
@@ -195,7 +184,7 @@ def stage_hot_strike(conn, lead):
     """
     Special: lead clicked tracker URL (HOT) while at Stage 1.
     Window: within MINUTES_HOT of the click.
-    Advances to Stage 2. HOT WA sent automatically.
+    Advances to Stage 2. HOT WA draft shown on dashboard.
     """
     lead_id      = lead['id']
     last_clicked = lead['last_clicked']
@@ -220,16 +209,11 @@ def stage_hot_strike(conn, lead):
         except Exception as e:
             logger.error(f'  HOT email error: {e}')
 
-    # Send HOT strike WA automatically
-    msg = lead.get('wa_draft_hot') or lead.get('wa_draft_1') or ''
-    if msg:
-        send_whatsapp_msg(lead['phone'], msg, lead.get('tracker_url'))
-        
     advance_stage(conn, lead_id, 2, {
         'followup_count': (lead['followup_count'] or 0) + 1,
         'last_contacted': now_str(),
     })
-    logger.info(f'  Stage 1→2 (HOT STRIKE) | WA sent automatically')
+    logger.info(f'  Stage 1→2 (HOT STRIKE) | WA hot draft ready on dashboard')
     return True
 
 
@@ -258,11 +242,6 @@ def stage_followup1(conn, lead):
             send_email(lead['email'], em['subject'], em['body'])
         except Exception as e:
             logger.error(f'  F1 email error: {e}')
-
-    # Send followup 1 WA automatically
-    msg = lead.get('wa_draft_2') or ''
-    if msg:
-        send_whatsapp_msg(lead['phone'], msg, lead.get('tracker_url'))
 
     advance_stage(conn, lead_id, 3, {
         'followup_count': (lead['followup_count'] or 0) + 1,
@@ -295,11 +274,6 @@ def stage_followup2(conn, lead):
             send_email(lead['email'], em['subject'], em['body'])
         except Exception as e:
             logger.error(f'  F2 email error: {e}')
-
-    # Send followup 2 WA automatically
-    msg = lead.get('wa_draft_3') or ''
-    if msg:
-        send_whatsapp_msg(lead['phone'], msg, lead.get('tracker_url'))
 
     advance_stage(conn, lead_id, 4, {
         'followup_count': (lead['followup_count'] or 0) + 1,
@@ -338,11 +312,6 @@ def stage_final(conn, lead):
         except Exception as e:
             logger.error(f'  Final email error: {e}')
 
-    # Send final WA automatically
-    msg = lead.get('wa_draft_4') or ''
-    if msg:
-        send_whatsapp_msg(lead['phone'], msg, lead.get('tracker_url'))
-
     delete_at = (
         datetime.now() + timedelta(days=DAYS_DELETE)
     ).strftime('%Y-%m-%d %H:%M:%S')
@@ -361,7 +330,7 @@ def stage_final(conn, lead):
 def process_deletions(conn):
     now   = now_str()
     leads = conn.execute('''
-        SELECT id, business_name, s3_url, phone FROM leads
+        SELECT id, business_name FROM leads
         WHERE scheduled_delete_at IS NOT NULL
         AND scheduled_delete_at <= ?
         AND lifecycle_status = 'DEAD'
@@ -369,28 +338,8 @@ def process_deletions(conn):
     ''', (now,)).fetchall()
 
     for l in leads:
-        # Delete from S3 first
-        s3_url = l['s3_url'] or ''
-        if s3_url:
-            try:
-                import boto3, os, re
-                from dotenv import load_dotenv
-                load_dotenv()
-                s3 = boto3.client('s3',
-                    aws_access_key_id     = os.getenv('AWS_ACCESS_KEY'),
-                    aws_secret_access_key = os.getenv('AWS_SECRET_KEY'),
-                    region_name           = os.getenv('AWS_REGION', 'ap-south-1')
-                )
-                bucket   = os.getenv('S3_BUCKET_NAME')
-                filename = s3_url.split('/')[-1]
-                s3.delete_object(Bucket=bucket, Key=filename)
-                logger.info(f'  S3 deleted: {filename}')
-            except Exception as e:
-                logger.error(f'  S3 delete failed: {e}')
-
-        # Delete from DB
         conn.execute('DELETE FROM leads WHERE id=?', (l['id'],))
-        logger.info(f'  DB DELETED: {l["business_name"][:40]} (ID:{l["id"]})')
+        logger.info(f'  DELETED: {l["business_name"][:40]} (ID:{l["id"]})')
 
     if leads:
         conn.commit()
@@ -425,36 +374,33 @@ def run_outreach_engine():
                 name      = lead['business_name'][:35]
 
                 try:
-                    # HOT leads — only send HOT strike, nothing else
-                    if lifecycle == 'HOT':
-                        if stage == 1:
-                            fired = stage_hot_strike(conn, lead)
-                            if not fired:
-                                logger.info(f'  HOT window passed for {name} — no action')
-                        else:
-                            logger.info(f'  HOT lead {name} — skipping automated messages')
-                        continue
-
-                    # WARM leads — paused, skip entirely
-                    if lifecycle in ('WARM', 'Contacted'):
-                        logger.info(f'  Skipping {name} — lifecycle: {lifecycle}')
-                        continue
-
-                    # DEAD leads — handled by process_deletions above
-                    if lifecycle == 'DEAD':
-                        continue
-
-                    # Normal progression
                     if stage == 0:
                         stage_0_initial(conn, lead)
+
                     elif stage == 1:
-                        stage_followup1(conn, lead)
+                        if (
+                            lead['click_count']
+                            and lead['click_count'] > 0
+                            and lifecycle == 'HOT'
+                        ):
+                            fired = stage_hot_strike(conn, lead)
+                            if not fired:
+                                # HOT window passed — treat as normal followup
+                                stage_followup1(conn, lead)
+                        else:
+                            stage_followup1(conn, lead)
+
                     elif stage == 2:
+                        # After HOT strike — check for followup
                         stage_followup1(conn, lead)
+
                     elif stage == 3:
                         stage_followup2(conn, lead)
+
                     elif stage == 4:
                         stage_final(conn, lead)
+
+                    # Stage 5 = DEAD, awaiting deletion — handled above
 
                 except Exception as e:
                     logger.error(f'  Lead {name} error: {e}')

@@ -66,6 +66,10 @@ def save_config(cfg):
     with open(CONFIG_PATH, 'w') as f:
         json.dump(cfg, f, indent=2)
 
+def now_str():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
 
 def time_ago(dt_string):
     if not dt_string:
@@ -80,7 +84,6 @@ def time_ago(dt_string):
         return f"{s//86400}d ago"
     except:
         return "Never"
-
 
 def check_auth():
     auth = request.authorization
@@ -369,6 +372,79 @@ def health():
         return jsonify({"status":"alive","total_leads":total,"hot_leads":hot})
     except Exception as e:
         return jsonify({"status":"error","error":str(e)}), 500
+
+
+
+
+@app.route('/webhook/whatsapp', methods=['POST'])
+def whatsapp_webhook():
+    """Receive incoming WhatsApp messages from Evolution API."""
+    try:
+        data  = request.json
+        event = data.get('event', '')
+
+        if event != 'messages.upsert':
+            return jsonify({"status": "ignored"}), 200
+
+        msg_data = data.get('data', {})
+        key      = msg_data.get('key', {})
+
+        # Only process incoming messages (not our own sent messages)
+        if key.get('fromMe', True):
+            return jsonify({"status": "own_message"}), 200
+
+        # Extract sender phone
+        remote_jid = key.get('remoteJid', '')
+        phone      = remote_jid.replace('@s.whatsapp.net', '').replace('@g.us', '')
+
+        # Extract message text
+        msg_content = msg_data.get('message', {})
+        text = (
+            msg_content.get('conversation') or
+            msg_content.get('extendedTextMessage', {}).get('text') or
+            ''
+        )
+
+        if not text or not phone:
+            return jsonify({"status": "no_text"}), 200
+
+        logger.info(f"WA REPLY received from {phone}: {text[:80]}")
+
+        # Find lead by phone number
+        with get_db() as conn:
+            # Try matching with various phone formats
+            lead = conn.execute('''
+                SELECT id, business_name, lifecycle_status
+                FROM leads
+                WHERE replace(replace(replace(phone, '+', ''), ' ', ''), '-', '')
+                LIKE ?
+                LIMIT 1
+            ''', (f'%{phone[-10:]}%',)).fetchone()
+
+            if lead:
+                conn.execute('''
+                    UPDATE leads SET
+                        lifecycle_status = CASE
+                            WHEN lifecycle_status = 'HOT' THEN 'HOT'
+                            ELSE 'WARM'
+                        END,
+                        outreach_paused = 1,
+                        last_clicked = ?
+                    WHERE id = ?
+                ''', (now_str(), lead['id']))
+                conn.commit()
+                logger.info(
+                    f"Reply from: {lead['business_name'][:40]} "
+                    f"(ID:{lead['id']}) — marked WARM + PAUSED"
+                )
+                # Save reply and mark as WARM (they replie
+
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return jsonify({"status": "error"}), 500
+
 
 
 # ── Dashboard ─────────────────────────────────────────────
@@ -679,6 +755,8 @@ document.addEventListener('DOMContentLoaded', function() {
 </html>"""
 
 
+@app.route('/admin')
+@app.route('/admin/')
 @app.route('/')
 @auth_required
 def dashboard():

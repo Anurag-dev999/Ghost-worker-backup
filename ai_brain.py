@@ -110,7 +110,7 @@ The reader should feel like they just got a hot tip from their coolest friend. E
 RETURN ONLY THIS JSON — no explanation, no markdown, no code blocks:
 
 {{
-  "detected_niche": "gym/clinic/restaurant/salon/hotel/coaching/retail/default",
+  "detected_niche": "on word : gym/clinic/cafe/restaurant/salon/hotel/coaching/retail/default",
   "alpha": {{
     "hero": "your alpha hero here",
     "about": "your alpha about paragraph here",
