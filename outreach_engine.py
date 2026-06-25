@@ -426,13 +426,18 @@ def run_outreach_engine():
 
                 try:
                     # HOT leads — only send HOT strike, nothing else
+
                     if lifecycle == 'HOT':
-                        if stage == 1:
+                        if stage == 0:
+                            # Never got any message — send cold WA first
+                            stage_0_initial(conn, lead)
+                        elif stage == 1:
+                            # Got cold WA, now send HOT strike
                             fired = stage_hot_strike(conn, lead)
                             if not fired:
-                                logger.info(f'  HOT window passed for {name} — no action')
+                                logger.info(f'  HOT window passed for {name}')
                         else:
-                            logger.info(f'  HOT lead {name} — skipping automated messages')
+                            logger.info(f'  HOT lead {name} stage:{stage} — manual follow up needed')
                         continue
 
                     # WARM leads — paused, skip entirely

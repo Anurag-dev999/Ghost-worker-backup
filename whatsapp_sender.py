@@ -26,9 +26,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-EVOLUTION_URL      = os.getenv("EVOLUTION_URL",      "http://localhost:8080")
-EVOLUTION_API_KEY  = os.getenv("EVOLUTION_API_KEY",  "changeme")
-EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "ghost-worker")
+EVOLUTION_URL        = os.getenv("EVOLUTION_URL",        "http://13.201.218.49:8080")
+EVOLUTION_GLOBAL_KEY = os.getenv("EVOLUTION_GLOBAL_KEY", "ghostworker2024")
+EVOLUTION_API_KEY    = os.getenv("EVOLUTION_API_KEY",    "ghostworker2024")
+EVOLUTION_INSTANCE   = os.getenv("EVOLUTION_INSTANCE",   "ghost-worker")
 
 FOUNDER_NAME  = "Anurag"
 FOUNDER_TITLE = "Founder"
@@ -135,24 +136,31 @@ def send_whatsapp(phone, message, tracker_url=None):
 
 
 def check_connection():
-    """Verify Evolution API and WhatsApp session are alive."""
+    """Verify Evolution API and auto-update instance API key."""
+    global EVOLUTION_API_KEY
     try:
+        # Always use global key to fetch instances
         url = f"{EVOLUTION_URL}/instance/fetchInstances"
         r   = requests.get(
             url,
-            headers = {"apikey": EVOLUTION_API_KEY},
+            headers = {"apikey": EVOLUTION_GLOBAL_KEY},
             timeout = 10
         )
         if r.status_code == 200:
             instances = r.json()
             for inst in instances:
-                if inst.get('instance', {}).get('instanceName') == EVOLUTION_INSTANCE:
-                    status = inst.get('instance', {}).get('status')
+                data = inst.get('instance', {})
+                if data.get('instanceName') == EVOLUTION_INSTANCE:
+                    status = data.get('status')
+                    # Auto-update instance key from response
+                    instance_key = data.get('apikey')
+                    if instance_key:
+                        EVOLUTION_API_KEY = instance_key
                     if status == 'open':
                         logger.info(f"WhatsApp connection: OK (status: {status})")
                         return True
                     else:
-                        logger.warning(f"WhatsApp status: {status} — not connected")
+                        logger.warning(f"WhatsApp status: {status}")
                         return False
             logger.error(f"Instance '{EVOLUTION_INSTANCE}' not found")
             return False

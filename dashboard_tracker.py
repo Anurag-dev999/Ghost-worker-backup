@@ -117,6 +117,7 @@ def run_pipeline_bg(query):
             ([PYTHON, 's3_deployer.py'],      120),
         ]
         for cmd, timeout in steps:
+
             try:
                 script = cmd[1]
                 logger.info(f"Running: {script}")
@@ -147,9 +148,28 @@ def static_files(filename):
 @app.route('/view/<int:lead_id>')
 def track_view(lead_id):
     try:
-        ip        = request.headers.get('X-Forwarded-For', request.remote_addr)
-        ua        = request.headers.get('User-Agent', '').lower()
+        user_agent = request.headers.get('User-Agent', '').lower()
+        ip         = request.headers.get('X-Forwarded-For', request.remote_addr)
+
+        # Ignore WhatsApp link preview bots and other crawlers
+        bot_signals = [
+            'whatsapp', 'facebookexternalhit', 'wget', 'curl',
+            'python-requests', 'bot', 'crawler', 'spider',
+            'preview', 'thumbnail', 'meta-externalagent'
+        ]
+        if any(signal in user_agent for signal in bot_signals):
+            logger.debug(f"Bot/preview ignored for ID:{lead_id} | UA:{user_agent[:60]}")
+            # Still redirect but don't count as click
+            with get_db() as conn:
+                lead = conn.execute(
+                    "SELECT s3_url FROM leads WHERE id=?", (lead_id,)
+                ).fetchone()
+            if lead and lead['s3_url']:
+                return redirect(lead['s3_url'], code=302)
+            return "OK", 200
+
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        ua        = user_agent
         device    = 'Mobile' if any(x in ua for x in ['mobile','android','iphone']) else 'Desktop'
 
         with get_db() as conn:
@@ -375,48 +395,65 @@ def health():
 
 
 
-
 @app.route('/webhook/whatsapp', methods=['POST'])
 def whatsapp_webhook():
     """Receive incoming WhatsApp messages from Evolution API."""
     try:
         data  = request.json
+        if not data:
+            return jsonify({"status": "no_data"}), 200
+
         event = data.get('event', '')
 
+        # Only process incoming messages
         if event != 'messages.upsert':
             return jsonify({"status": "ignored"}), 200
 
         msg_data = data.get('data', {})
         key      = msg_data.get('key', {})
 
-        # Only process incoming messages (not our own sent messages)
+        # CRITICAL: Ignore ALL outgoing messages (sent by us)
         if key.get('fromMe', True):
-            return jsonify({"status": "own_message"}), 200
+            return jsonify({"status": "own_message_ignored"}), 200
+
+        # Ignore if no actual message content
+        msg_content = msg_data.get('message', {})
+        if not msg_content:
+            return jsonify({"status": "no_content"}), 200
+
+        # Ignore status updates and broadcasts
+        remote_jid = key.get('remoteJid', '')
+        if 'status' in remote_jid or 'broadcast' in remote_jid:
+            return jsonify({"status": "status_ignored"}), 200
 
         # Extract sender phone
-        remote_jid = key.get('remoteJid', '')
-        phone      = remote_jid.replace('@s.whatsapp.net', '').replace('@g.us', '')
+        phone = remote_jid.replace('@s.whatsapp.net', '').replace('@g.us', '')
+        if not phone:
+            return jsonify({"status": "no_phone"}), 200
+
+        # Ignore messages from your own number
+        own_number = os.getenv('EVOLUTION_INSTANCE_PHONE', '917814871810')
+        if phone.endswith(own_number[-10:]):
+            return jsonify({"status": "own_number_ignored"}), 200
 
         # Extract message text
-        msg_content = msg_data.get('message', {})
         text = (
             msg_content.get('conversation') or
             msg_content.get('extendedTextMessage', {}).get('text') or
             ''
         )
 
-        if not text or not phone:
+        if not text:
             return jsonify({"status": "no_text"}), 200
 
-        logger.info(f"WA REPLY received from {phone}: {text[:80]}")
+        logger.info(f"WA REPLY from {phone}: {text[:80]}")
 
-        # Find lead by phone number
+        # Find lead by phone
         with get_db() as conn:
-            # Try matching with various phone formats
             lead = conn.execute('''
                 SELECT id, business_name, lifecycle_status
                 FROM leads
-                WHERE replace(replace(replace(phone, '+', ''), ' ', ''), '-', '')
+                WHERE replace(replace(replace(phone,'+',''),' ',''),'-','')
                 LIKE ?
                 LIMIT 1
             ''', (f'%{phone[-10:]}%',)).fetchone()
@@ -428,23 +465,21 @@ def whatsapp_webhook():
                             WHEN lifecycle_status = 'HOT' THEN 'HOT'
                             ELSE 'WARM'
                         END,
-                        outreach_paused = 1,
-                        last_clicked = ?
+                        outreach_paused  = 1,
+                        last_clicked     = ?
                     WHERE id = ?
                 ''', (now_str(), lead['id']))
                 conn.commit()
                 logger.info(
-                    f"Reply from: {lead['business_name'][:40]} "
-                    f"(ID:{lead['id']}) — marked WARM + PAUSED"
+                    f"Reply matched: {lead['business_name'][:40]} "
+                    f"(ID:{lead['id']}) — WARM + PAUSED"
                 )
-                # Save reply and mark as WARM (they replie
 
         return jsonify({"status": "ok"}), 200
 
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return jsonify({"status": "error"}), 500
-
 
 
 # ── Dashboard ─────────────────────────────────────────────
