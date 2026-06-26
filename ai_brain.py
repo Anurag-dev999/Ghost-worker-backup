@@ -61,6 +61,16 @@ def get_pending_leads():
         logger.error(f"Could not fetch leads: {e}")
         return []
 
+def get_available_niches():
+    """Read actual template files to build niche options dynamically."""
+    template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+    niches = []
+    if os.path.exists(template_dir):
+        for f in os.listdir(template_dir):
+            if f.endswith('.html') and f != 'default.html':
+                niches.append(f.replace('.html', ''))
+    return niches if niches else ['default']
+
 
 def build_dual_prompt(lead):
     name    = lead['business_name']
@@ -72,6 +82,7 @@ def build_dual_prompt(lead):
 
     # Extract neighbourhood/area for hyper-local copy
     area = address.split(',')[0].strip() if ',' in address else city
+    available_niches = '/'.join(get_available_niches())
 
     return f"""You are an elite brand strategist and copywriter. You are writing EXCLUSIVELY for this ONE business. Never recycle phrases from other businesses.
 
@@ -110,7 +121,9 @@ The reader should feel like they just got a hot tip from their coolest friend. E
 RETURN ONLY THIS JSON — no explanation, no markdown, no code blocks:
 
 {{
-  "detected_niche": "on word : gym/clinic/cafe/restaurant/salon/hotel/coaching/retail/default",
+
+
+  "detected_niche": "one word from ONLY these available options: {available_niches}. Pick the closest match. If none match well, use the first option.",
   "alpha": {{
     "hero": "your alpha hero here",
     "about": "your alpha about paragraph here",

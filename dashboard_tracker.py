@@ -143,34 +143,235 @@ def static_files(filename):
     return send_from_directory('static', filename)
 
 
-# ── Radar routes ─────────────────────────────────────────
+# ── welcome page ─────────────────────────────────────────
+
+GATEWAY_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{{BUSINESS_NAME}} — Website Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  height:100%;
+  font-family:'Inter',system-ui,sans-serif;
+  background:#08090c;
+}
+body{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:40px 24px;
+}
+.wrap{
+  max-width:420px;
+  width:100%;
+}
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  background:#0f1218;
+  border:1px solid #1e2433;
+  border-radius:100px;
+  padding:6px 14px 6px 10px;
+  margin-bottom:40px;
+}
+.badge-dot{
+  width:6px;height:6px;
+  border-radius:50%;
+  background:#4ade80;
+  animation:blink 2.5s ease-in-out infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+.badge-text{
+  font-size:11px;
+  letter-spacing:0.5px;
+  color:#6b7280;
+  font-weight:400;
+}
+.label{
+  font-size:11px;
+  letter-spacing:3px;
+  text-transform:uppercase;
+  color:#3b82f6;
+  font-weight:500;
+  margin-bottom:18px;
+}
+.heading{
+  font-size:36px;
+  font-weight:300;
+  color:#e5e7eb;
+  line-height:1.2;
+  margin-bottom:14px;
+  letter-spacing:-0.5px;
+}
+.heading strong{
+  font-weight:500;
+  color:#f9fafb;
+}
+.tagline{
+  font-size:12px;
+  color:#6b7280;
+  font-weight:400;
+  letter-spacing:1.5px;
+  text-transform:uppercase;
+  margin-bottom:14px;
+}
+.sub{
+  font-size:14px;
+  color:#9ca3af;
+  line-height:1.85;
+  margin-bottom:44px;
+}
+.cta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  background:#e8eaf0;
+  color:#08090c;
+  border:none;
+  border-radius:16px;
+  padding:20px 24px;
+  font-size:15px;
+  font-weight:500;
+  font-family:'Inter',sans-serif;
+  cursor:pointer;
+  text-decoration:none;
+  width:100%;
+  transition:transform 0.18s ease,background 0.15s;
+  letter-spacing:-0.1px;
+}
+.cta:hover{
+  background:#d1d5e0;
+  transform:translateY(-2px);
+}
+.cta-arrow{
+  width:36px;height:36px;
+  background:#08090c;
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  transition:transform 0.18s ease;
+}
+.cta:hover .cta-arrow{transform:translateX(3px)}
+.cta-arrow svg{
+  width:14px;height:14px;
+  stroke:#e8eaf0;fill:none;
+  stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;
+}
+.rule{
+  width:100%;
+  height:1px;
+  background:#161b24;
+  margin:32px 0;
+}
+.meta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.meta-left{
+  font-size:12px;
+  color:#6b7280;
+}
+.meta-left span{
+  color:#9ca3af;
+  font-weight:500;
+}
+.meta-right{
+  font-size:11px;
+  color:#6b7280;
+  letter-spacing:0.5px;
+}
+@media(max-width:480px){
+  .heading{font-size:28px}
+  body{padding:32px 20px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="badge">
+    <div class="badge-dot"></div>
+    <span class="badge-text">Live preview ready</span>
+  </div>
+
+  <div class="label">Only for {{BUSINESS_NAME}}</div>
+
+  <h1 class="heading">Results first.<br><strong>Talk later.</strong></h1>
+
+  <div class="tagline">We built. You judge. No pressure.</div>
+
+  <p class="sub">Your website is live — built free, just for you.<br>No cost. No commitment. See it first.</p>
+
+  <a href="/click/{{LEAD_ID}}" class="cta">
+    <span>Open my website</span>
+    <div class="cta-arrow">
+      <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+
+  <div class="rule"></div>
+
+  <div class="meta">
+    <div class="meta-left">Built by <span>{{AGENCY_NAME}}</span></div>
+    <div class="meta-right">Free &nbsp;·&nbsp; No strings</div>
+  </div>
+</div>
+</body>
+</html>"""
+
+
+# ---- Radar routes ─────────────────────────────────────────
 
 @app.route('/view/<int:lead_id>')
 def track_view(lead_id):
+    """
+    Gateway page — shown to EVERYONE including WhatsApp preview bots.
+    Does NOT update database. Just shows a landing page with a button.
+    """
     try:
-        user_agent = request.headers.get('User-Agent', '').lower()
-        ip         = request.headers.get('X-Forwarded-For', request.remote_addr)
+        with get_db() as conn:
+            lead = conn.execute(
+                "SELECT business_name FROM leads WHERE id=?",
+                (lead_id,)
+            ).fetchone()
 
-        # Ignore WhatsApp link preview bots and other crawlers
-        bot_signals = [
-            'whatsapp', 'facebookexternalhit', 'wget', 'curl',
-            'python-requests', 'bot', 'crawler', 'spider',
-            'preview', 'thumbnail', 'meta-externalagent'
-        ]
-        if any(signal in user_agent for signal in bot_signals):
-            logger.debug(f"Bot/preview ignored for ID:{lead_id} | UA:{user_agent[:60]}")
-            # Still redirect but don't count as click
-            with get_db() as conn:
-                lead = conn.execute(
-                    "SELECT s3_url FROM leads WHERE id=?", (lead_id,)
-                ).fetchone()
-            if lead and lead['s3_url']:
-                return redirect(lead['s3_url'], code=302)
-            return "OK", 200
+        if not lead:
+            return "Not found", 404
 
+        agency_name = os.getenv('AGENCY_NAME', 'LaunchPad Web')
+        html = GATEWAY_HTML\
+            .replace('{{BUSINESS_NAME}}', lead['business_name'])\
+            .replace('{{LEAD_ID}}',       str(lead_id))\
+            .replace('{{AGENCY_NAME}}',   agency_name)
+
+        return html, 200
+
+    except Exception as e:
+        logger.error(f"Gateway error: {e}")
+        return "Error", 500
+
+
+@app.route('/click/<int:lead_id>')
+def track_click(lead_id):
+    """
+    Real click handler — only triggered when human clicks the button.
+    Updates DB to HOT and redirects to S3 site.
+    """
+    try:
+        ip        = request.headers.get('X-Forwarded-For', request.remote_addr)
+        ua        = request.headers.get('User-Agent', '').lower()
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        ua        = user_agent
-        device    = 'Mobile' if any(x in ua for x in ['mobile','android','iphone']) else 'Desktop'
+        device    = 'Mobile' if any(
+            x in ua for x in ['mobile', 'android', 'iphone']
+        ) else 'Desktop'
 
         with get_db() as conn:
             lead = conn.execute(
@@ -182,43 +383,33 @@ def track_view(lead_id):
                 return "Not found", 404
 
             new_count = (lead['click_count'] or 0) + 1
+
             conn.execute('''
                 UPDATE leads SET
-                    click_count=?, last_clicked=?, lifecycle_status='HOT'
-                WHERE id=?
+                    click_count      = ?,
+                    last_clicked     = ?,
+                    lifecycle_status = 'HOT'
+                WHERE id = ?
             ''', (new_count, timestamp, lead_id))
             conn.commit()
 
-            logger.info(f"RADAR — {lead['business_name']} | Click #{new_count} | {device} | {ip}")
+            logger.info(
+                f"REAL CLICK — {lead['business_name'][:40]} | "
+                f"Click #{new_count} | {device} | {ip}"
+            )
             s3_url = lead['s3_url']
-
-        if not s3_url:
-            return "Site not ready", 404
-
-        return redirect(s3_url, code=302)
+            if not s3_url:
+                return "Site not ready", 404
+            return redirect(s3_url, code=302)
 
     except Exception as e:
-        logger.error(f"Tracker error: {e}")
+        logger.error(f"Click tracker error: {e}")
         return "Error", 500
 
 
 @app.route('/view/<int:lead_id>/pixel')
 def tracker_pixel(lead_id):
-    try:
-        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        with get_db() as conn:
-            lead = conn.execute(
-                "SELECT click_count FROM leads WHERE id=?", (lead_id,)
-            ).fetchone()
-            if lead:
-                conn.execute('''
-                    UPDATE leads SET click_count=?, last_clicked=?,
-                    lifecycle_status='HOT' WHERE id=?
-                ''', ((lead['click_count'] or 0)+1, ts, lead_id))
-                conn.commit()
-    except Exception as e:
-        logger.error(f"Pixel error: {e}")
-
+    """Silent 1x1 pixel — does NOT update click count."""
     from flask import Response
     gif = b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00\x21\xf9\x04\x00\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b'
     return Response(gif, mimetype='image/gif')
