@@ -1,14 +1,13 @@
-# Python Environment
+.env
+agency.db
+agency.db-wal
+agency.db-shm
 ghostenv/
+built_sites/
+raw_leads.json
+logs/
 __pycache__/
 *.pyc
-
-# Database & Logs
-agency.db-shm
-agency.db-wal
-logs/
-
-# Scraping & Temporary Data
-raw_leads.json
-filtered_leads.json
-built_sites/
+*.pyo
+.DS_Store
+backups/

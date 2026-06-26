@@ -26,9 +26,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-EVOLUTION_URL        = os.getenv("EVOLUTION_URL",        "http://13.201.218.49:8080")
-EVOLUTION_GLOBAL_KEY = os.getenv("EVOLUTION_GLOBAL_KEY", "ghostworker2024")
-EVOLUTION_API_KEY    = os.getenv("EVOLUTION_API_KEY",    "ghostworker2024")
+EVOLUTION_URL        = os.getenv("EVOLUTION_URL",        "http://localhost:8080")
+EVOLUTION_GLOBAL_KEY = os.getenv("EVOLUTION_GLOBAL_KEY", "changeme")
+EVOLUTION_API_KEY    = os.getenv("EVOLUTION_API_KEY",    "changeme")
 EVOLUTION_INSTANCE   = os.getenv("EVOLUTION_INSTANCE",   "ghost-worker")
 
 FOUNDER_NAME  = "Anurag"

@@ -104,7 +104,7 @@ def check_whatsapp():
 
 def check_evolution_api():
     try:
-        url = os.getenv('EVOLUTION_URL', 'http://13.201.218.49:8080')
+        url = os.getenv('EVOLUTION_URL', 'http://localhost:8080')
         r   = requests.get(f"{url}", timeout=5)
         if r.status_code == 200:
             logger.info("Evolution API: running")

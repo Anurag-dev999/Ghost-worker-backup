@@ -696,6 +696,239 @@ def whatsapp_webhook():
         logger.error(f"Webhook error: {e}")
         return jsonify({"status": "error"}), 500
 
+# ── Template Dashboard ─────────────────────────────────────────────
+
+
+TEMPLATES_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ghost Worker — Template Manager</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0a0e1a;color:#e0e6f0;min-height:100vh;padding:20px}
+.topbar{background:#0d1117;border-bottom:1px solid #1e2d45;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;margin:-20px -20px 24px;flex-wrap:wrap;gap:10px}
+.logo{font-size:18px;font-weight:700;color:#58a6ff}.logo span{color:#3fb950}
+.nav-links{display:flex;gap:16px}
+.nav-links a{color:#8b949e;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;transition:all .15s}
+.nav-links a:hover{background:#161b27;color:#e0e6f0}
+.nav-links a.active{background:#1e2d45;color:#58a6ff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1200px;margin:0 auto}
+@media(max-width:768px){.grid{grid-template-columns:1fr}}
+.panel{background:#161b27;border:1px solid #1e2d45;border-radius:12px;padding:20px}
+.panel-title{font-size:14px;font-weight:600;color:#e0e6f0;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.form-group{margin-bottom:14px}
+.form-label{font-size:12px;color:#8b949e;margin-bottom:6px;display:block;text-transform:uppercase;letter-spacing:1px}
+.inp{background:#0d1117;border:1px solid #1e2d45;color:#e0e6f0;padding:10px 14px;border-radius:8px;font-size:13px;width:100%}
+.inp:focus{outline:none;border-color:#58a6ff}
+.file-drop{background:#0d1117;border:2px dashed #1e2d45;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .15s;position:relative}
+.file-drop:hover{border-color:#58a6ff}
+.file-drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.file-drop-icon{font-size:28px;margin-bottom:8px}
+.file-drop-text{font-size:13px;color:#8b949e}
+.file-drop-text span{color:#58a6ff}
+.file-name{font-size:12px;color:#3fb950;margin-top:8px;display:none}
+.btn{padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s;width:100%;margin-top:8px}
+.btn:hover{opacity:.8}
+.btn-blue{background:#1f6feb;color:#fff}
+.btn-green{background:#238636;color:#fff}
+.btn-red{background:#da3633;color:#fff;width:auto;padding:5px 12px;font-size:11px}
+.toast{position:fixed;bottom:20px;right:20px;background:#1e2d45;color:#58a6ff;padding:12px 18px;border-radius:8px;font-size:13px;border:1px solid #2a4060;display:none;z-index:999;max-width:320px}
+.template-list{display:flex;flex-direction:column;gap:8px}
+.template-item{background:#0d1117;border:1px solid #1e2d45;border-radius:8px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+.template-name{font-size:13px;font-weight:500;color:#e0e6f0}
+.template-badge{font-size:11px;background:#1e2d45;color:#58a6ff;padding:2px 8px;border-radius:20px;margin-left:8px}
+.template-size{font-size:11px;color:#8b949e}
+.asset-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto}
+.asset-item{background:#0d1117;border:1px solid #1e2d45;border-radius:6px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.asset-key{font-size:11px;color:#8b949e;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asset-url-btn{font-size:11px;color:#58a6ff;cursor:pointer;background:none;border:none;padding:0;white-space:nowrap}
+.tip{font-size:11px;color:#8b949e;margin-top:10px;padding:8px 12px;background:#0d1117;border-radius:6px;border-left:3px solid #1e2d45;line-height:1.6}
+.tip code{color:#58a6ff;font-family:monospace}
+.empty{text-align:center;color:#8b949e;font-size:13px;padding:20px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">Ghost<span>Worker</span></div>
+  <div class="nav-links">
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/templates" class="active">Templates</a>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- Upload Template -->
+  <div class="panel">
+    <div class="panel-title">📄 Upload HTML Template</div>
+    <div class="form-group">
+      <label class="form-label">Niche Name (becomes filename)</label>
+      <input class="inp" id="tmpl-niche" placeholder="e.g. gym, salon, hotel" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">HTML File</label>
+      <div class="file-drop" id="tmpl-drop">
+        <input type="file" accept=".html" id="tmpl-file" onchange="showFileName('tmpl-file','tmpl-fname')">
+        <div class="file-drop-icon">📁</div>
+        <div class="file-drop-text">Drop your <span>.html</span> file here or click to browse</div>
+        <div class="file-name" id="tmpl-fname"></div>
+      </div>
+    </div>
+    <div class="tip">
+      Template will be saved as <code>{niche}.html</code> in <code>/templates/</code> folder.<br>
+      Use standard placeholders: <code>{{BUSINESS_NAME}}</code> <code>{{HERO}}</code> <code>{{ABOUT}}</code> <code>{{PHONE_CLEAN}}</code> etc.
+    </div>
+    <button class="btn btn-blue" onclick="uploadTemplate()">Upload Template</button>
+  </div>
+
+  <!-- Upload S3 Asset -->
+  <div class="panel">
+    <div class="panel-title">☁️ Upload Asset to S3</div>
+    <div class="form-group">
+      <label class="form-label">Niche Folder</label>
+      <input class="inp" id="asset-niche" placeholder="e.g. gym, salon, cafe" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">File (CSS / JS / Image)</label>
+      <div class="file-drop">
+        <input type="file" accept=".css,.js,.png,.jpg,.jpeg,.webp,.svg" id="asset-file" onchange="showFileName('asset-file','asset-fname')">
+        <div class="file-drop-icon">⬆️</div>
+        <div class="file-drop-text">Drop <span>CSS / JS / Image</span> here or click to browse</div>
+        <div class="file-name" id="asset-fname"></div>
+      </div>
+    </div>
+    <div class="tip">
+      File will be uploaded to S3 at:<br>
+      <code>{{bucket_url}}/assets/{niche}/filename</code><br>
+      Link this URL in your HTML template.
+    </div>
+    <button class="btn btn-green" onclick="uploadAsset()">Upload to S3</button>
+  </div>
+
+  <!-- Existing Templates -->
+  <div class="panel">
+    <div class="panel-title">🗂 Installed Templates ({{ templates|length }})</div>
+    {% if templates %}
+    <div class="template-list">
+      {% for t in templates %}
+      <div class="template-item">
+        <div>
+          <span class="template-name">{{ t.niche }}</span>
+          <span class="template-badge">{{ t.name }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="template-size">{{ t.size_kb }}KB</span>
+          {% if t.niche != 'default' %}
+          <button class="btn btn-red" onclick="deleteTemplate('{{ t.niche }}')">Delete</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">No templates installed yet</div>
+    {% endif %}
+  </div>
+
+  <!-- S3 Assets -->
+  <div class="panel">
+    <div class="panel-title">📦 S3 Assets ({{ s3_assets|length }})</div>
+    {% if s3_assets %}
+    <div class="asset-list">
+      {% for a in s3_assets %}
+      <div class="asset-item">
+        <span class="asset-key">{{ a.key }}</span>
+        <button class="asset-url-btn" onclick="copyURL('{{ a.url }}')">Copy URL</button>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">No assets uploaded yet</div>
+    {% endif %}
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function showToast(msg, err) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = err ? '#3d0f0f' : '#1e2d45';
+  t.style.color      = err ? '#f85149' : '#58a6ff';
+  t.style.display    = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+function showFileName(inputId, labelId) {
+  const f = document.getElementById(inputId).files[0];
+  const l = document.getElementById(labelId);
+  if (f) { l.textContent = '✓ ' + f.name; l.style.display = 'block'; }
+}
+
+function uploadTemplate() {
+  const niche = document.getElementById('tmpl-niche').value.trim().toLowerCase();
+  const file  = document.getElementById('tmpl-file').files[0];
+  if (!niche) { showToast('Enter a niche name', true); return; }
+  if (!file)  { showToast('Select an HTML file', true); return; }
+
+  const fd = new FormData();
+  fd.append('niche', niche);
+  fd.append('file',  file);
+
+  fetch('/api/upload_template', { method: 'POST', body: fd })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) { showToast('Template saved: ' + d.filename); setTimeout(() => location.reload(), 1000); }
+    else showToast(d.error, true);
+  });
+}
+
+function uploadAsset() {
+  const niche = document.getElementById('asset-niche').value.trim().toLowerCase();
+  const file  = document.getElementById('asset-file').files[0];
+  if (!niche) { showToast('Enter a niche folder name', true); return; }
+  if (!file)  { showToast('Select a file', true); return; }
+
+  const fd = new FormData();
+  fd.append('niche', niche);
+  fd.append('file',  file);
+
+  showToast('Uploading to S3...');
+  fetch('/api/upload_asset', { method: 'POST', body: fd })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      showToast('Uploaded! URL copied to clipboard');
+      navigator.clipboard.writeText(d.url).catch(() => {});
+      setTimeout(() => location.reload(), 1000);
+    } else showToast(d.error, true);
+  });
+}
+
+function copyURL(url) {
+  navigator.clipboard.writeText(url)
+  .then(() => showToast('URL copied!'))
+  .catch(() => { prompt('Copy this URL:', url); });
+}
+
+function deleteTemplate(niche) {
+  if (!confirm('Delete ' + niche + '.html? This cannot be undone.')) return;
+  fetch('/api/delete_template', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({niche})
+  }).then(r => r.json()).then(d => {
+    if (d.success) { showToast('Template deleted'); setTimeout(() => location.reload(), 600); }
+    else showToast(d.error, true);
+  });
+}
+</script>
+</body>
+</html>"""
 
 # ── Dashboard ─────────────────────────────────────────────
 
@@ -772,6 +1005,10 @@ td{padding:11px 12px;vertical-align:middle}
 <div class="topbar">
   <div class="logo">Ghost<span>Worker</span> <span style="color:#8b949e;font-size:12px;font-weight:400">Control Tower</span></div>
   <div class="live"><span class="dot"></span>{{ now }}</div>
+  
+  <div class="nav-links" style="display:flex;gap:12px">    
+    <a href="/admin/templates" style="color:#8b949e;text-decoration:none;font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #1e2d45">📄 Templates</a>  
+  </div>
 </div>
 
 <div class="stats">
@@ -1004,6 +1241,179 @@ document.addEventListener('DOMContentLoaded', function() {
 </body>
 </html>"""
 
+
+
+@app.route('/admin/templates')
+@auth_required
+def templates_page():
+    """Template management page."""
+    import os
+    template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+    templates    = []
+    if os.path.exists(template_dir):
+        for f in os.listdir(template_dir):
+            if f.endswith('.html'):
+                size = os.path.getsize(os.path.join(template_dir, f))
+                templates.append({
+                    'name':    f,
+                    'niche':   f.replace('.html', ''),
+                    'size_kb': round(size / 1024, 1)
+                })
+    templates.sort(key=lambda x: x['name'])
+
+    # Get S3 assets
+    s3_assets = []
+    try:
+        import boto3
+        s3 = boto3.client('s3',
+            aws_access_key_id     = os.getenv('AWS_ACCESS_KEY'),
+            aws_secret_access_key = os.getenv('AWS_SECRET_KEY'),
+            region_name           = os.getenv('AWS_REGION', 'ap-south-1')
+        )
+        bucket   = os.getenv('S3_BUCKET_NAME')
+        response = s3.list_objects_v2(Bucket=bucket, Prefix='assets/')
+        for obj in response.get('Contents', []):
+            key = obj['Key']
+            if not key.endswith('/'):
+                s3_assets.append({
+                    'key':  key,
+                    'url':  f"https://{bucket}.s3.ap-south-1.amazonaws.com/{key}",
+                    'size': round(obj['Size'] / 1024, 1)
+                })
+    except Exception as e:
+        logger.error(f"S3 list error: {e}")
+
+    bucket_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.ap-south-1.amazonaws.com"
+
+    return render_template_string(
+        TEMPLATES_HTML,
+        templates  = templates,
+        s3_assets  = s3_assets,
+        bucket_url = bucket_url
+    )
+
+
+@app.route('/api/upload_template', methods=['POST'])
+@auth_required
+def api_upload_template():
+    """Upload HTML template file."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file  = request.files['file']
+        niche = request.form.get('niche', '').strip().lower()
+
+        if not niche:
+            return jsonify({"error": "Niche name required"}), 400
+        if not file.filename.endswith('.html'):
+            return jsonify({"error": "Only .html files allowed"}), 400
+
+        # Sanitize niche name
+        import re
+        niche = re.sub(r'[^a-z0-9_-]', '', niche)
+        if not niche:
+            return jsonify({"error": "Invalid niche name"}), 400
+
+        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        os.makedirs(template_dir, exist_ok=True)
+        save_path = os.path.join(template_dir, f"{niche}.html")
+
+        file.save(save_path)
+        size_kb = round(os.path.getsize(save_path) / 1024, 1)
+        logger.info(f"Template uploaded: {niche}.html ({size_kb}KB)")
+
+        return jsonify({
+            "success": True,
+            "filename": f"{niche}.html",
+            "size_kb":  size_kb,
+            "message":  f"Template saved as {niche}.html"
+        })
+    except Exception as e:
+        logger.error(f"Template upload error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/upload_asset', methods=['POST'])
+@auth_required
+def api_upload_asset():
+    """Upload CSS/JS/image asset to S3."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file      = request.files['file']
+        niche     = request.form.get('niche', '').strip().lower()
+        file_type = request.form.get('type', 'css')
+
+        if not niche or not file.filename:
+            return jsonify({"error": "Niche and file required"}), 400
+
+        # Determine S3 key and content type
+        ext = file.filename.rsplit('.', 1)[-1].lower()
+        content_types = {
+            'css':  'text/css',
+            'js':   'application/javascript',
+            'png':  'image/png',
+            'jpg':  'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'webp': 'image/webp',
+            'svg':  'image/svg+xml',
+        }
+        ct  = content_types.get(ext, 'application/octet-stream')
+        key = f"assets/{niche}/{file.filename}"
+
+        import boto3
+        s3 = boto3.client('s3',
+            aws_access_key_id     = os.getenv('AWS_ACCESS_KEY'),
+            aws_secret_access_key = os.getenv('AWS_SECRET_KEY'),
+            region_name           = os.getenv('AWS_REGION', 'ap-south-1')
+        )
+        bucket = os.getenv('S3_BUCKET_NAME')
+
+        s3.upload_fileobj(
+            file,
+            bucket,
+            key,
+            ExtraArgs={
+                'ContentType':  ct,
+                'CacheControl': 'max-age=86400'
+            }
+        )
+
+        url = f"https://{bucket}.s3.ap-south-1.amazonaws.com/{key}"
+        logger.info(f"Asset uploaded: {key}")
+
+        return jsonify({
+            "success": True,
+            "key":     key,
+            "url":     url,
+            "message": f"Uploaded to S3: {url}"
+        })
+    except Exception as e:
+        logger.error(f"Asset upload error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/delete_template', methods=['POST'])
+@auth_required
+def api_delete_template():
+    """Delete a template file."""
+    try:
+        niche = request.json.get('niche', '').strip()
+        if not niche or niche == 'default':
+            return jsonify({"error": "Cannot delete default template"}), 400
+
+        template_path = os.path.join(
+            os.path.dirname(__file__), 'templates', f"{niche}.html"
+        )
+        if os.path.exists(template_path):
+            os.remove(template_path)
+            logger.info(f"Template deleted: {niche}.html")
+            return jsonify({"success": True})
+        return jsonify({"error": "Template not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/admin')
 @app.route('/admin/')
