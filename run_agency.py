@@ -23,240 +23,178 @@ logging.basicConfig(
     handlers=[
         RotatingFileHandler(
             os.path.join(LOG_DIR, 'ghost_worker.log'),
-            maxBytes=5 * 1024 * 1024,
-            backupCount=3
+            maxBytes=5*1024*1024, backupCount=3
         ),
         logging.StreamHandler()
     ]
 )
-
 logger = logging.getLogger(__name__)
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON      = os.path.join(PROJECT_DIR, 'ghostenv', 'bin', 'python3')
 
-REQUIRED_ENV_VARS = [
-    "GEMINI_API_KEY",
-    "GROQ_API_KEY",
-    "APIFY_API_TOKEN",
-    "AWS_ACCESS_KEY",
-    "AWS_SECRET_KEY",
-    "S3_BUCKET_NAME",
+REQUIRED_ENV = [
+    'GROQ_API_KEY', 'APIFY_API_TOKEN',
+    'AWS_ACCESS_KEY', 'AWS_SECRET_KEY', 'S3_BUCKET_NAME',
+    'EVOLUTION_URL', 'EVOLUTION_GLOBAL_KEY', 'EVOLUTION_INSTANCE',
+    'SMTP_HOST', 'SMTP_EMAIL', 'SMTP_PASSWORD',
+    'AGENCY_NAME', 'SERVER_DOMAIN',
 ]
 
 REQUIRED_DIRS = [
     os.path.join(PROJECT_DIR, 'templates'),
     os.path.join(PROJECT_DIR, 'built_sites'),
     os.path.join(PROJECT_DIR, 'logs'),
+    os.path.join(PROJECT_DIR, 'static'),
 ]
 
 
-def check_env_vars():
-    logger.info("Checking environment variables...")
+def check_env():
     missing = []
-    for var in REQUIRED_ENV_VARS:
+    for var in REQUIRED_ENV:
         if not os.getenv(var):
             missing.append(var)
-            print(f"  ERROR: {var} not found. Please add it to your .env file.")
-
+            print(f"  MISSING: {var}")
     if missing:
         logger.error(f"Missing env vars: {', '.join(missing)}")
         return False
-
-    logger.info(f"All {len(REQUIRED_ENV_VARS)} environment variables — OK")
+    logger.info(f"All env vars OK")
     return True
 
 
 def check_dirs():
-    logger.info("Checking required directories...")
     for d in REQUIRED_DIRS:
-        if not os.path.exists(d):
-            os.makedirs(d, exist_ok=True)
-            logger.info(f"  Created: {d}")
-        else:
-            logger.info(f"  OK: {d}")
+        os.makedirs(d, exist_ok=True)
+    logger.info("All directories OK")
     return True
 
 
 def check_database():
-    logger.info("Checking database...")
     if not os.path.exists(DB_PATH):
-        logger.warning("agency.db not found — running init_agency.py...")
-        result = subprocess.run(
-            [PYTHON, os.path.join(PROJECT_DIR, 'init_agency.py')],
-            cwd=PROJECT_DIR
-        )
-        if result.returncode != 0:
-            logger.error("Database initialization failed")
-            return False
-        logger.info("Database initialized successfully")
-    else:
-        logger.info("Database exists — OK")
+        logger.warning("DB missing — running init...")
+        subprocess.run([PYTHON, os.path.join(PROJECT_DIR, 'init_agency.py')], cwd=PROJECT_DIR)
+    logger.info("Database OK")
     return True
 
 
 def check_templates():
     template_dir  = os.path.join(PROJECT_DIR, 'templates')
     default_tmpl  = os.path.join(template_dir, 'default.html')
-    if not os.path.exists(default_tmpl):
-        logger.warning("default.html template missing — dashboard will work but builder needs it")
+    templates     = [f for f in os.listdir(template_dir) if f.endswith('.html')]
+    if not templates:
+        logger.warning("No templates found in /templates/")
     else:
-        templates = [f for f in os.listdir(template_dir) if f.endswith('.html')]
-        logger.info(f"Templates found: {', '.join(templates)}")
+        logger.info(f"Templates: {', '.join(templates)}")
     return True
 
 
-def get_public_ip():
+def check_whatsapp():
     try:
-        return requests.get('https://api.ipify.org', timeout=5).text.strip()
-    except:
-        return "YOUR_EC2_IP"
+        from whatsapp_sender import check_connection
+        ok = check_connection()
+        if ok:
+            logger.info("WhatsApp: connected")
+        else:
+            logger.warning("WhatsApp: NOT connected — outreach will be skipped")
+        return ok
+    except Exception as e:
+        logger.error(f"WhatsApp check error: {e}")
+        return False
+
+
+def check_evolution_api():
+    try:
+        url = os.getenv('EVOLUTION_URL', 'http://13.201.218.49:8080')
+        r   = requests.get(f"{url}", timeout=5)
+        if r.status_code == 200:
+            logger.info("Evolution API: running")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Evolution API not reachable: {e}")
+        return False
 
 
 def get_db_stats():
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
-            total = conn.execute(
-                "SELECT COUNT(*) FROM leads"
-            ).fetchone()[0]
-            hot = conn.execute(
-                "SELECT COUNT(*) FROM leads WHERE lifecycle_status='HOT'"
-            ).fetchone()[0]
-            deployed = conn.execute(
-                "SELECT COUNT(*) FROM leads WHERE status='Deployed'"
-            ).fetchone()[0]
-            pending_ai = conn.execute(
-                "SELECT COUNT(*) FROM leads WHERE status='Scraped'"
-            ).fetchone()[0]
-            return total, hot, deployed, pending_ai
+            total    = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+            hot      = conn.execute("SELECT COUNT(*) FROM leads WHERE lifecycle_status='HOT'").fetchone()[0]
+            deployed = conn.execute("SELECT COUNT(*) FROM leads WHERE status='Deployed'").fetchone()[0]
+            pending  = conn.execute("SELECT COUNT(*) FROM leads WHERE status='Scraped'").fetchone()[0]
+            stage0   = conn.execute("SELECT COUNT(*) FROM leads WHERE outreach_stage=0 AND status='Deployed'").fetchone()[0]
+            return total, hot, deployed, pending, stage0
     except Exception as e:
-        logger.error(f"Could not read DB stats: {e}")
-        return 0, 0, 0, 0
+        logger.error(f"DB stats error: {e}")
+        return 0, 0, 0, 0, 0
 
 
-def start_dashboard():
-    logger.info("Starting dashboard on port 5000...")
+def get_public_ip():
     try:
-        subprocess.run(
-            [
-                os.path.join(PROJECT_DIR, 'ghostenv', 'bin', 'gunicorn'),
-                '-w', '2',
-                '-b', '0.0.0.0:5000',
-                '--timeout', '120',
-                'dashboard_tracker:app'
-            ],
-            cwd=PROJECT_DIR
-        )
-    except Exception as e:
-        logger.error(f"Dashboard crashed: {e}")
+        return requests.get('https://api.ipify.org', timeout=5).text.strip()
+    except:
+        return "unknown"
 
 
-def start_scheduler():
-    logger.info("Starting scheduler...")
-    try:
-        subprocess.run(
-            [PYTHON, os.path.join(PROJECT_DIR, 'scheduler.py')],
-            cwd=PROJECT_DIR
-        )
-    except Exception as e:
-        logger.error(f"Scheduler crashed: {e}")
-
-
-def print_banner(public_ip, total, hot, deployed, pending_ai):
+def print_banner(public_ip, total, hot, deployed, pending, stage0, wa_ok):
+    domain = os.getenv('SERVER_DOMAIN', f'http://{public_ip}:5000')
     print("\n")
     print("╔══════════════════════════════════════════════════════╗")
-    print("║          GHOST WORKER — SYSTEM IS LIVE               ║")
+    print("║         GHOST WORKER — SYSTEM IS LIVE               ║")
     print("╠══════════════════════════════════════════════════════╣")
-    print(f"║  Dashboard  : http://{public_ip}:5000")
-    print(f"║  Health     : http://{public_ip}:5000/health")
+    print(f"║  Dashboard : {domain}/admin")
+    print(f"║  Health    : {domain}/health")
     print("╠══════════════════════════════════════════════════════╣")
-    print(f"║  Total leads   : {total}")
-    print(f"║  HOT leads     : {hot}")
-    print(f"║  Deployed sites: {deployed}")
-    print(f"║  Pending AI    : {pending_ai}")
+    print(f"║  Total leads    : {total}")
+    print(f"║  HOT leads      : {hot}")
+    print(f"║  Deployed sites : {deployed}")
+    print(f"║  Pending AI     : {pending}")
+    print(f"║  Needs outreach : {stage0}")
+    print(f"║  WhatsApp       : {'✅ Connected' if wa_ok else '❌ Disconnected'}")
     print("╠══════════════════════════════════════════════════════╣")
-    print(f"║  Started at : {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
-    print("║  Press Ctrl+C to stop")
+    print(f"║  Started : {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
+    print("║  PM2 manages dashboard + scheduler automatically")
     print("╚══════════════════════════════════════════════════════╝")
     print()
 
 
 def run_agency():
     print("\n" + "="*54)
-    print("  Ghost Worker — Starting up...")
+    print("  Ghost Worker — Pre-flight check")
     print("="*54 + "\n")
 
-    # ── Pre-flight checks ────────────────────────────────
-    if not check_env_vars():
+    if not check_env():
         print("\nFix missing .env variables then run again.")
         sys.exit(1)
 
     check_dirs()
-
-    if not check_database():
-        print("\nDatabase setup failed. Check logs/ghost_worker.log")
-        sys.exit(1)
-
+    check_database()
     check_templates()
+    wa_ok = check_whatsapp()
+    check_evolution_api()
 
     public_ip = get_public_ip()
-    logger.info(f"Server IP: {public_ip}")
+    total, hot, deployed, pending, stage0 = get_db_stats()
+    print_banner(public_ip, total, hot, deployed, pending, stage0, wa_ok)
 
-    # ── Launch dashboard in background thread ────────────
-    dashboard_thread = threading.Thread(
-        target=start_dashboard,
-        daemon=True,
-        name="dashboard"
-    )
-    dashboard_thread.start()
-    logger.info("Dashboard thread started")
-    time.sleep(3)
+    if not wa_ok:
+        print("WARNING: WhatsApp disconnected.")
+        print(f"Fix: open http://{public_ip}:8080/manager and reconnect")
+        print()
 
-    # ── Launch scheduler in background thread ────────────
-    scheduler_thread = threading.Thread(
-        target=start_scheduler,
-        daemon=True,
-        name="scheduler"
-    )
-    scheduler_thread.start()
-    logger.info("Scheduler thread started")
-    time.sleep(2)
+    if stage0 > 0:
+        print(f"ACTION NEEDED: {stage0} leads waiting for cold outreach")
+        print("Run: python3 outreach_engine.py")
+        print()
 
-    # ── Print startup banner ─────────────────────────────
-    total, hot, deployed, pending_ai = get_db_stats()
-    print_banner(public_ip, total, hot, deployed, pending_ai)
-
-    # ── Keep alive — monitor threads ─────────────────────
-    while True:
-        try:
-            time.sleep(60)
-
-            if not dashboard_thread.is_alive():
-                logger.warning("Dashboard thread died — restarting...")
-                dashboard_thread = threading.Thread(
-                    target=start_dashboard,
-                    daemon=True,
-                    name="dashboard"
-                )
-                dashboard_thread.start()
-
-            if not scheduler_thread.is_alive():
-                logger.warning("Scheduler thread died — restarting...")
-                scheduler_thread = threading.Thread(
-                    target=start_scheduler,
-                    daemon=True,
-                    name="scheduler"
-                )
-                scheduler_thread.start()
-
-        except KeyboardInterrupt:
-            logger.info("Ghost Worker stopped by user")
-            print("\n  Ghost Worker stopped. Goodbye.")
-            sys.exit(0)
-        except Exception as e:
-            logger.error(f"Orchestrator error: {e}")
-            time.sleep(30)
+    print("Ghost Worker is managed by PM2.")
+    print("Commands:")
+    print("  pm2 status          — check processes")
+    print("  pm2 logs            — view live logs")
+    print("  pm2 restart all     — restart everything")
+    print("  python3 scraper.py 'query'  — manual scrape")
+    print("  python3 outreach_engine.py  — manual outreach")
 
 
 if __name__ == "__main__":

@@ -271,8 +271,32 @@ def api_delete_lead():
     try:
         lead_id = request.json.get('lead_id')
         with get_db() as conn:
+            # Get S3 URL before deleting
+            lead = conn.execute(
+                "SELECT s3_url, business_name FROM leads WHERE id=?",
+                (lead_id,)
+            ).fetchone()
+
+            if lead and lead['s3_url']:
+                # Delete from S3
+                try:
+                    import boto3
+                    s3 = boto3.client('s3',
+                        aws_access_key_id     = os.getenv('AWS_ACCESS_KEY'),
+                        aws_secret_access_key = os.getenv('AWS_SECRET_KEY'),
+                        region_name           = os.getenv('AWS_REGION', 'ap-south-1')
+                    )
+                    bucket   = os.getenv('S3_BUCKET_NAME')
+                    filename = lead['s3_url'].split('/')[-1]
+                    s3.delete_object(Bucket=bucket, Key=filename)
+                    logger.info(f"S3 deleted: {filename} for {lead['business_name']}")
+                except Exception as e:
+                    logger.error(f"S3 delete failed: {e}")
+
+            # Delete from DB
             conn.execute("DELETE FROM leads WHERE id=?", (lead_id,))
             conn.commit()
+
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
