@@ -1,5 +1,3 @@
-import boto3
-import re
 import sqlite3
 import os
 import json
@@ -10,8 +8,6 @@ from email.mime.multipart import MIMEMultipart
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-
-
 
 load_dotenv()
 
@@ -379,6 +375,9 @@ def process_deletions(conn):
         s3_url = l['s3_url'] or ''
         if s3_url:
             try:
+                import boto3, os, re
+                from dotenv import load_dotenv
+                load_dotenv()
                 s3 = boto3.client('s3',
                     aws_access_key_id     = os.getenv('AWS_ACCESS_KEY'),
                     aws_secret_access_key = os.getenv('AWS_SECRET_KEY'),

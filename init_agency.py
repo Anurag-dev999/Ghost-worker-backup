@@ -65,31 +65,54 @@ def init_database():
                     last_clicked        TEXT,
                     followup_count      INTEGER DEFAULT 0,
                     last_contacted      TEXT,
-                    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+                    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+                    outreach_stage      INTEGER DEFAULT 0,
+                    outreach_paused     INTEGER DEFAULT 0,
+                    stage_updated_at    TEXT,
+                    email_sent_count    INTEGER DEFAULT 0,
+                    scheduled_delete_at TEXT,
+                    wa_draft_1          TEXT,
+                    wa_draft_hot        TEXT,
+                    wa_draft_2          TEXT,
+                    wa_draft_3          TEXT,
+                    wa_draft_4          TEXT,
+                    email_draft_1       TEXT,
+                    email_draft_hot     TEXT,
+                    email_draft_2       TEXT,
+                    email_draft_3       TEXT,
+                    email_draft_4       TEXT,
+                    hero_a              TEXT,
+                    about_a             TEXT,
+                    services_a          TEXT,
+                    pitch_a             TEXT,
+                    hero_b              TEXT,
+                    about_b             TEXT,
+                    services_b          TEXT,
+                    pitch_b             TEXT
                 )
             ''')
 
-            conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_status
-                ON leads(status)
-            ''')
-            conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_lifecycle
-                ON leads(lifecycle_status)
-            ''')
-            conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_phone
-                ON leads(phone)
-            ''')
-            conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_tier
-                ON leads(tier)
-            ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_status
+            ON leads(status)
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_lifecycle
+            ON leads(lifecycle_status)
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_phone
+            ON leads(phone)
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_tier
+            ON leads(tier)
+        ''')
 
-            conn.commit()
+        conn.commit()
 
-            cursor = conn.execute("SELECT COUNT(*) FROM leads")
-            lead_count = cursor.fetchone()[0]
+        cursor = conn.execute("SELECT COUNT(*) FROM leads")
+        lead_count = cursor.fetchone()[0]
 
         if db_existed:
             logger.info(f"Database already existed — verified and updated.")
@@ -135,7 +158,15 @@ def verify_database():
                 'ai_about', 'ai_pitch_whatsapp', 'ai_pitch_email',
                 'ai_footer', 'template_used', 's3_url', 'tracker_url',
                 'status', 'lifecycle_status', 'click_count', 'last_clicked',
-                'followup_count', 'last_contacted', 'created_at'
+                'followup_count', 'last_contacted', 'created_at',
+                'outreach_stage', 'outreach_paused', 'stage_updated_at',
+                'email_sent_count', 'scheduled_delete_at',
+                'wa_draft_1', 'wa_draft_hot', 'wa_draft_2',
+                'wa_draft_3', 'wa_draft_4',
+                'email_draft_1', 'email_draft_hot', 'email_draft_2',
+                'email_draft_3', 'email_draft_4',
+                'hero_a', 'about_a', 'services_a', 'pitch_a',
+                'hero_b', 'about_b', 'services_b', 'pitch_b'
             ]
 
             missing = [col for col in required if col not in columns]

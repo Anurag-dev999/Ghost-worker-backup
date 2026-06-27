@@ -36,7 +36,7 @@ FOUNDER_NAME   = "Anurag"
 FOUNDER_TITLE  = "Founder"
 FOUNDER_PHONE  = "+91 78148 71810"
 FOUNDER_EMAIL  = "dev.anurag999@gmail.com"
-AGENCY_NAME    = "LaunchPad Web"
+AGENCY_NAME = os.getenv("AGENCY_NAME", "LaunchPad Web")
 WA_SIGNATURE   = f"\n\n— {FOUNDER_NAME}\n{FOUNDER_TITLE}, {AGENCY_NAME}\n{FOUNDER_PHONE}"
 EMAIL_SIGNATURE = f"\n\nWarm regards,\n{FOUNDER_NAME}\n{FOUNDER_TITLE} — {AGENCY_NAME}\n📞 {FOUNDER_PHONE}\n✉ {FOUNDER_EMAIL}"
 
@@ -78,13 +78,13 @@ def call_ai(prompt, label):
         return result
     except Exception as e:
         logger.warning(f"  Groq failed ({label}): {e} — trying Gemini")
-#    try:
- #       result = call_gemini(prompt)
-  #      logger.info(f"  Gemini OK: {label}")
-   #     return result
-    #except Exception as e:
-     #   logger.error(f"  Both APIs failed ({label}): {e}")
-      #  return None
+    try:
+        result = call_gemini(prompt)
+        logger.info(f"  Gemini OK: {label}")
+        return result
+    except Exception as e:
+        logger.error(f"  Both APIs failed ({label}): {e}")
+        return None
 
 
 # ── PROMPTS ───────────────────────────────────────────────
@@ -321,24 +321,29 @@ def write_all_messages(lead):
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute('''
-                UPDATE leads SET
-                    wa_draft_1      = :wa_draft_1,
-                    wa_draft_hot    = :wa_draft_hot,
-                    wa_draft_2      = :wa_draft_2,
-                    wa_draft_3      = :wa_draft_3,
-                    wa_draft_4      = :wa_draft_4,
-                    email_draft_1   = :email_draft_1,
-                    email_draft_hot = :email_draft_hot,
-                    email_draft_2   = :email_draft_2,
-                    email_draft_3   = :email_draft_3,
-                    stage_updated_at = :now
-                WHERE id = :id
-            ''', {
-                **wa_results,
-                **em_results,
-                'now': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'id':  lead_id
-            })
+            UPDATE leads SET
+                wa_draft_1      = :wa_draft_1,
+                wa_draft_hot    = :wa_draft_hot,
+                wa_draft_2      = :wa_draft_2,
+                wa_draft_3      = :wa_draft_3,
+                wa_draft_4      = :wa_draft_4,
+                email_draft_1   = :email_draft_1,
+                email_draft_hot = :email_draft_hot,
+                email_draft_2   = :email_draft_2,
+                email_draft_3   = :email_draft_3,
+                email_draft_4   = :email_draft_4,
+                stage_updated_at = :now
+            WHERE id = :id
+        ''', {
+            **wa_results,
+            **em_results,
+            'now': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'id':  lead_id
+        })
+
+
+
+
             conn.commit()
         logger.info(f"  All messages saved — ID:{lead_id}")
         return True

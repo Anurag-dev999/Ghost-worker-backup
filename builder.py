@@ -222,9 +222,21 @@ def run_builder():
         template, template_used = load_template(niche)
 
         if not template:
-            logger.error(f"  Skipping — no template available")
+            logger.error(f"  Skipping — no template available for '{niche}'")
+            try:
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.execute("PRAGMA journal_mode=WAL")
+                    conn.execute(
+                        "UPDATE leads SET status='Build_Failed' WHERE id=?",
+                        (lead_id,)
+                    )
+                    conn.commit()
+            except Exception as db_e:
+                logger.error(f"  Could not mark Build_Failed: {db_e}")
             failed += 1
             continue
+
+
 
         try:
             html               = inject_content(template, lead, tracker_url)

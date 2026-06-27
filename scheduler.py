@@ -313,10 +313,20 @@ def job_backup():
         logger.error(f"Backup error: {e}")
 
 
+_last_config = {}
+
 def rebuild_schedule():
-    """Reload config and rebuild schedule — picks up dashboard changes."""
-    logger.info("Rebuilding schedule from config...")
-    build_schedule()
+    """Only rebuild if config actually changed — prevents timer drift."""
+    global _last_config
+    cfg = load_config()
+    check_keys = ['scrape_interval_hours', 'lifecycle_check_hours', 'scheduled_queries']
+    changed = any(cfg.get(k) != _last_config.get(k) for k in check_keys)
+    if changed:
+        logger.info("Config changed — rebuilding schedule")
+        _last_config = {k: cfg.get(k) for k in check_keys}
+        build_schedule()
+    else:
+        logger.debug("Config unchanged — schedule kept")
 
 
 # ═══════════════════════════════════════════════════════════

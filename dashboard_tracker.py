@@ -755,6 +755,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#0a0e1a;color:#e0e6f0;mi
   <div class="nav-links">
     <a href="/admin">Dashboard</a>
     <a href="/admin/templates" class="active">Templates</a>
+    <a href="/api/export_leads" class="btn bk bs" style="font-size:12px;padding:6px 12px;text-decoration:none">📥 Export CSV</a>
   </div>
 </div>
 
@@ -1005,9 +1006,9 @@ td{padding:11px 12px;vertical-align:middle}
 <div class="topbar">
   <div class="logo">Ghost<span>Worker</span> <span style="color:#8b949e;font-size:12px;font-weight:400">Control Tower</span></div>
   <div class="live"><span class="dot"></span>{{ now }}</div>
-  
-  <div class="nav-links" style="display:flex;gap:12px">    
-    <a href="/admin/templates" style="color:#8b949e;text-decoration:none;font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #1e2d45">📄 Templates</a>  
+
+  <div class="nav-links" style="display:flex;gap:12px">
+    <a href="/admin/templates" style="color:#8b949e;text-decoration:none;font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #1e2d45">📄 Templates</a>
   </div>
 </div>
 
@@ -1088,8 +1089,8 @@ td{padding:11px 12px;vertical-align:middle}
       <div class="acts">
         {% if lead.s3_url %}<a class="btn bk bs" href="{{ lead.s3_url }}" target="_blank">Site</a>{% endif %}
         {% if lead.tracker_url %}<button class="btn bk bs copy-btn" data-url="{{ lead.tracker_url }}">Link</button>{% endif %}
-        
-        
+
+
         {% if lead.phone %}
         {% set wa_msg = '' %}
         {% if lead.outreach_stage == 1 %}{% set wa_msg = lead.wa_draft_1 or '' %}
@@ -1103,7 +1104,7 @@ td{padding:11px 12px;vertical-align:middle}
         target="_blank"
         title="Stage {{ lead.outreach_stage }} message">WA S{{ lead.outreach_stage }}</a>
         {% endif %}
-        
+
 
         {% if lead.outreach_paused %}
         <button class="btn bb bs pause-btn" data-id="{{ lead.id }}" data-paused="1" style="background:#d29922">▶ Resume</button>
@@ -1161,7 +1162,7 @@ td{padding:11px 12px;vertical-align:middle}
         <div style="color:#8b949e;font-size:11px;margin-top:8px">Stage: {{ lead.outreach_stage or 0 }} | Followups: {{ lead.followup_count or 0 }} | Paused: {{ 'Yes' if lead.outreach_paused else 'No' }}</div>
       </div>
     </td>
-    
+
   </tr>
   {% endfor %}
   </tbody>
@@ -1277,13 +1278,13 @@ def templates_page():
             if not key.endswith('/'):
                 s3_assets.append({
                     'key':  key,
-                    'url':  f"https://{bucket}.s3.ap-south-1.amazonaws.com/{key}",
+                    'url':  f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{key}",
                     'size': round(obj['Size'] / 1024, 1)
                 })
     except Exception as e:
         logger.error(f"S3 list error: {e}")
 
-    bucket_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.ap-south-1.amazonaws.com"
+    bucket_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com"
 
     return render_template_string(
         TEMPLATES_HTML,
@@ -1381,7 +1382,7 @@ def api_upload_asset():
             }
         )
 
-        url = f"https://{bucket}.s3.ap-south-1.amazonaws.com/{key}"
+        url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{key}"
         logger.info(f"Asset uploaded: {key}")
 
         return jsonify({
@@ -1413,6 +1414,128 @@ def api_delete_template():
             return jsonify({"success": True})
         return jsonify({"error": "Template not found"}), 404
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/export_leads')
+@auth_required
+def export_leads():
+    """Download leads as Excel file for calling team."""
+    try:
+        import io
+        import csv
+        from flask import Response
+
+        with get_db() as conn:
+            leads = conn.execute('''
+                SELECT
+                    id,
+                    business_name,
+                    phone,
+                    city,
+                    niche,
+                    rating,
+                    reviews_count,
+                    status,
+                    lifecycle_status,
+                    outreach_stage,
+                    click_count,
+                    last_clicked,
+                    last_contacted,
+                    followup_count,
+                    tracker_url,
+                    s3_url,
+                    created_at,
+                    outreach_paused,
+                    address
+                FROM leads
+                ORDER BY
+                    CASE lifecycle_status
+                        WHEN 'HOT'  THEN 1
+                        WHEN 'WARM' THEN 2
+                        WHEN 'NEW'  THEN 3
+                        ELSE 4
+                    END,
+                    click_count DESC
+            ''').fetchall()
+
+        output  = io.StringIO()
+        writer  = csv.writer(output)
+
+        # Header row
+        writer.writerow([
+            'Lead ID',
+            'Business Name',
+            'Phone',
+            'City',
+            'Niche',
+            'Rating',
+            'Reviews',
+            'Pipeline Status',
+            'Lead Status',
+            'Outreach Stage',
+            'Total Clicks',
+            'Last Seen',
+            'Last Contacted',
+            'Follow-ups Sent',
+            'Demo Site URL',
+            'Tracker URL',
+            'Added On',
+            'Paused',
+            'Address'
+        ])
+
+        # Stage label map
+        stage_labels = {
+            0: 'Not Started',
+            1: 'Cold Sent',
+            2: 'HOT Strike Sent',
+            3: 'Followup 1 Sent',
+            4: 'Followup 2 Sent',
+            5: 'Final Sent',
+        }
+
+        for lead in leads:
+            stage_num   = lead[9] or 0
+            stage_label = stage_labels.get(stage_num, f'Stage {stage_num}')
+            paused      = 'Yes' if lead[17] else 'No'
+
+            writer.writerow([
+                lead[0],   # id
+                lead[1],   # business_name
+                lead[2],   # phone
+                lead[3],   # city
+                lead[4],   # niche
+                lead[5],   # rating
+                lead[6],   # reviews_count
+                lead[7],   # status
+                lead[8],   # lifecycle_status
+                stage_label,
+                lead[10],  # click_count
+                lead[11],  # last_clicked
+                lead[12],  # last_contacted
+                lead[13],  # followup_count
+                lead[15],  # s3_url
+                lead[14],  # tracker_url
+                lead[16],  # created_at
+                paused,
+                lead[18],  # address
+            ])
+
+        output.seek(0)
+        date_str  = datetime.now().strftime('%Y-%m-%d')
+        filename  = f"ghost_worker_leads_{date_str}.csv"
+
+        return Response(
+            output.getvalue(),
+            mimetype    = 'text/csv',
+            headers     = {
+                'Content-Disposition': f'attachment; filename={filename}'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Export error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/admin')

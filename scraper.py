@@ -8,6 +8,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from apify_client import ApifyClient
 
+CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'raw_leads.json')
+
 load_dotenv()
 
 LOG_DIR    = os.path.join(os.path.dirname(__file__), 'logs')
@@ -31,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 APIFY_TOKEN = os.getenv("APIFY_API_TOKEN")
 DB_PATH     = os.path.join(os.path.dirname(__file__), 'agency.db')
-CACHE_FILE  = "raw_leads.json"
+
 
 DEFAULT_QUERY = "dental clinics in Ludhiana Punjab India"
 MIN_REVIEWS   = 30
@@ -87,8 +89,14 @@ def whale_filter(raw_leads):
         name    = (lead.get('title')        or '').strip()
         phone   = (lead.get('phone')        or '').strip()
         website = (lead.get('website')      or '').strip()
-        reviews = int(lead.get('reviewsCount') or 0)
-        rating  = float(lead.get('totalScore') or 0)
+        try:
+            reviews = int(lead.get('reviewsCount') or 0)
+        except (ValueError, TypeError):
+            reviews = 0
+        try:
+            rating = float(lead.get('totalScore') or 0)
+        except (ValueError, TypeError):
+            rating = 0.0
         closed  = lead.get('permanentlyClosed', False)
         temp_cl = lead.get('temporarilyClosed', False)
 
@@ -193,59 +201,67 @@ def save_to_db(leads, query_string):
 
 # ── MAIN ─────────────────────────────────────────
 
-# Step 1 — Query
-if len(sys.argv) > 1:
-    search_query = sys.argv[1]
-    logger.info(f"Dynamic query: {search_query}")
+def run_scraper(query=None):
+    global search_query
+
+    # ── STEP 1: Dynamic query ──────────────────
+    if query:
+        search_query = query
+        logger.info(f"Dynamic query: {search_query}")
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
+            logger.info("Old cache cleared for fresh search")
+    elif len(sys.argv) > 1:
+        search_query = sys.argv[1]
+        logger.info(f"Dynamic query: {search_query}")
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
+            logger.info("Old cache cleared for fresh search")
+    else:
+        search_query = DEFAULT_QUERY
+        logger.info(f"Default query: {search_query}")
+
+    # ── STEP 2: Cache check ─────────────────────
     if os.path.exists(CACHE_FILE):
-        os.remove(CACHE_FILE)
-        logger.info("Old cache cleared for fresh search")
-else:
-    search_query = DEFAULT_QUERY
-    logger.info(f"Default query: {search_query}")
+        logger.info("Cache found — loading raw_leads.json")
+        with open(CACHE_FILE, "r") as f:
+            raw_leads = json.load(f)
+        logger.info(f"Loaded {len(raw_leads)} from cache")
+    else:
+        logger.info(f"Calling Apify for: {search_query}")
+        client    = ApifyClient(APIFY_TOKEN)
+        run_input = {
+            "searchStringsArray":        [search_query],
+            "maxCrawledPlacesPerSearch": 50,
+            "language":                  "en",
+            "hasWebsite":                False,
+        }
+        run       = client.actor("compass/crawler-google-places").call(
+                        run_input=run_input
+                    )
+        raw_leads = list(
+                        client.dataset(run["defaultDatasetId"]).iterate_items()
+                    )
+        with open(CACHE_FILE, "w") as f:
+            json.dump(raw_leads, f, indent=4)
+        logger.info(f"Apify returned {len(raw_leads)} raw results — cached")
 
-# Step 2 — Apify call or cache
-if os.path.exists(CACHE_FILE):
-    logger.info("Cache found — loading raw_leads.json")
-    with open(CACHE_FILE, "r") as f:
-        raw_leads = json.load(f)
-    logger.info(f"Loaded {len(raw_leads)} from cache")
-else:
-    logger.info(f"Calling Apify: {search_query}")
-    client    = ApifyClient(APIFY_TOKEN)
-    run_input = {
-        "searchStringsArray":        [search_query],
-        "maxCrawledPlacesPerSearch": 50,
-        "language":                  "en",
-        "hasWebsite":                False,  # Apify pre-filter (not 100% reliable)
-    }
-    run       = client.actor("compass/crawler-google-places").call(
-                    run_input=run_input
-                )
-    raw_leads = list(
-                    client.dataset(run["defaultDatasetId"]).iterate_items()
-                )
-    with open(CACHE_FILE, "w") as f:
-        json.dump(raw_leads, f, indent=4)
-    logger.info(f"Apify returned {len(raw_leads)} raw results — cached")
+    # ── STEP 3: Whale filter ────────────────────
+    logger.info("Running Whale Filter...")
+    qualified = whale_filter(raw_leads)
+    qualified.sort(key=lambda x: x.get('reviewsCount', 0), reverse=True)
+    top_whales = qualified[:TOP_WHALES]
 
-# Step 3 — Whale filter (Level-2, catches what Apify missed)
-logger.info("Running Whale Filter...")
-qualified = whale_filter(raw_leads)
+    logger.info(
+        f"Total raw: {len(raw_leads)} | "
+        f"Passed filter: {len(qualified)} | "
+        f"Top whales: {len(top_whales)}"
+    )
 
-# Step 4 — Sort by reviews, take top N
-qualified.sort(key=lambda x: x.get('reviewsCount', 0), reverse=True)
-top_whales = qualified[:TOP_WHALES]
+    if not top_whales:
+        logger.warning("No whales found — try lower MIN_REVIEWS or different query")
+        return 0
 
-logger.info(
-    f"Total raw: {len(raw_leads)} | "
-    f"Passed filter: {len(qualified)} | "
-    f"Top whales: {len(top_whales)}"
-)
-
-if not top_whales:
-    logger.warning("No whales found — try lower MIN_REVIEWS or different query")
-else:
     print(f"\nTop {len(top_whales)} Whales:")
     for i, w in enumerate(top_whales, 1):
         print(
@@ -254,14 +270,12 @@ else:
             f"Phone: {w.get('phone')}"
         )
 
-    # Step 5 — Save to DB
+    # ── STEP 4: Save to DB ──────────────────────
     saved = save_to_db(top_whales, search_query)
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
-        total   = conn.execute(
-            "SELECT COUNT(*) FROM leads"
-        ).fetchone()[0]
+        total   = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
         pending = conn.execute(
             "SELECT COUNT(*) FROM leads WHERE status='Scraped'"
         ).fetchone()[0]
@@ -272,3 +286,11 @@ else:
     logger.info(f"Waiting for AI   : {pending}")
     logger.info(f"{'='*50}")
     logger.info("Next step: python3 ai_brain.py")
+    return saved
+
+
+if __name__ == "__main__":
+    print("\n" + "="*50)
+    print("  Ghost Worker — Scraper")
+    print("="*50 + "\n")
+    run_scraper()
