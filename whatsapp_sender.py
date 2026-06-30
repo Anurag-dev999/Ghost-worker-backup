@@ -1,3 +1,4 @@
+import random
 import os
 import re
 import json
@@ -90,7 +91,7 @@ def send_whatsapp(phone, message, tracker_url=None):
     payload = {
         "number":      f"{number}@s.whatsapp.net",
         "textMessage": {"text": final_message},
-        "delay":       1200
+        "delay":       random.randint(3000, 6000)
     }
 
     try:

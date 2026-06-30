@@ -1,3 +1,5 @@
+import random
+import time
 import boto3
 import re
 import sqlite3
@@ -101,18 +103,20 @@ def send_email(to_email, subject, body):
 
 
 def send_whatsapp_msg(phone, message, tracker_url):
-    """Send WhatsApp via Evolution API."""
+    """Send WhatsApp via Evolution API with human-like delay."""
     if not phone or not message:
         return False
     try:
-        from whatsapp_sender import send_whatsapp, check_connection
-        if not check_connection():
-            logger.warning("WhatsApp not connected — skipping WA send")
-            return False
+        from whatsapp_sender import send_whatsapp
         result = send_whatsapp(phone, message, tracker_url)
         if result == "NO_WHATSAPP":
             logger.warning(f"  {phone} not on WhatsApp — will try email only")
             return "NO_WHATSAPP"
+        # Human-like gap AFTER every successful send
+        if result:
+            delay = random.uniform(12, 22)
+            logger.info(f"  Waiting {delay:.0f}s before next message...")
+            time.sleep(delay)
         return result
     except Exception as e:
         logger.error(f"WA send error: {e}")
@@ -402,7 +406,13 @@ def process_deletions(conn):
 
 # ── MAIN CYCLE ────────────────────────────────────────────
 
+LOCK_FILE = os.path.join(os.path.dirname(__file__), '.outreach.lock')
+
 def run_outreach_engine():
+    if os.path.exists(LOCK_FILE):
+        logger.warning('Already running — skipping cycle')
+        return
+    open(LOCK_FILE, 'w').close()
     logger.info('Outreach Engine — Starting cycle')
 
     try:
@@ -432,15 +442,18 @@ def run_outreach_engine():
 
                     if lifecycle == 'HOT':
                         if stage == 0:
-                            # Never got any message — send cold WA first
                             stage_0_initial(conn, lead)
                         elif stage == 1:
-                            # Got cold WA, now send HOT strike
                             fired = stage_hot_strike(conn, lead)
                             if not fired:
-                                logger.info(f'  HOT window passed for {name}')
-                        else:
-                            logger.info(f'  HOT lead {name} stage:{stage} — manual follow up needed')
+                                # HOT window passed — treat as normal followup
+                                stage_followup1(conn, lead)
+                        elif stage == 2:
+                            stage_followup1(conn, lead)
+                        elif stage == 3:
+                            stage_followup2(conn, lead)
+                        elif stage == 4:
+                            stage_final(conn, lead)
                         continue
 
                     # WARM leads — paused, skip entirely
@@ -472,6 +485,9 @@ def run_outreach_engine():
 
     except Exception as e:
         logger.error(f'Engine error: {e}')
+    finally:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
 
 
 if __name__ == '__main__':

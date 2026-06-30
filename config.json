@@ -1,11 +1,13 @@
 {
-  "scrape_interval_hours": 2,
+  "scrape_interval_hours": 8,
   "lifecycle_check_hours": 6,
   "scheduled_queries": [
     "cafes in Chandigarh Punjab India",
     "cafes in Ludhiana Punjab India",
-    "cafes in Patiala Punjab India"
+    "cafes in Patiala Punjab India",
+    "cafes in delhi india",
+    "cafes in delhi"
   ],
-  "last_updated": "2026-06-27 08:28:34",
+  "last_updated": "2026-06-30 17:12:43",
   "pipeline_interval_hours": 1
 }
