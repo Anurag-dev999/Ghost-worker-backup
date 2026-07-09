@@ -31,7 +31,8 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-APIFY_TOKEN = os.getenv("APIFY_API_TOKEN")
+APIFY_TOKEN   = os.getenv("APIFY_API_TOKEN")
+APIFY_TOKEN_2 = os.getenv("APIFY_API_TOKEN_2")
 DB_PATH     = os.path.join(os.path.dirname(__file__), 'agency.db')
 
 
@@ -67,10 +68,20 @@ def get_existing_phones():
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
-            cursor = conn.execute(
-                "SELECT phone FROM leads WHERE phone IS NOT NULL"
+            # Include both active leads AND blacklisted numbers
+            leads_phones = set(
+                row[0] for row in conn.execute(
+                    "SELECT phone FROM leads WHERE phone IS NOT NULL"
+                ).fetchall()
             )
-            return set(row[0] for row in cursor.fetchall())
+            blacklist_phones = set(
+                row[0] for row in conn.execute(
+                    "SELECT phone FROM blacklist WHERE phone IS NOT NULL"
+                ).fetchall()
+            )
+            combined = leads_phones | blacklist_phones
+            logger.info(f"Existing phones: {len(leads_phones)} leads + {len(blacklist_phones)} blacklisted")
+            return combined
     except Exception as e:
         logger.error(f"Could not read DB: {e}")
         return set()
@@ -228,20 +239,34 @@ def run_scraper(query=None):
             raw_leads = json.load(f)
         logger.info(f"Loaded {len(raw_leads)} from cache")
     else:
-        logger.info(f"Calling Apify for: {search_query}")
-        client    = ApifyClient(APIFY_TOKEN)
         run_input = {
             "searchStringsArray":        [search_query],
             "maxCrawledPlacesPerSearch": 50,
             "language":                  "en",
             "hasWebsite":                False,
         }
-        run       = client.actor("compass/crawler-google-places").call(
-                        run_input=run_input
-                    )
-        raw_leads = list(
-                        client.dataset(run["defaultDatasetId"]).iterate_items()
-                    )
+        raw_leads = None
+        try:
+            logger.info(f"Calling Apify account 1 for: {search_query}")
+            client    = ApifyClient(APIFY_TOKEN)
+            run       = client.actor("compass/crawler-google-places").call(run_input=run_input)
+            raw_leads = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+            logger.info(f"Apify account 1 OK — {len(raw_leads)} results")
+        except Exception as e:
+            logger.warning(f"Apify account 1 failed: {e}")
+            if APIFY_TOKEN_2:
+                try:
+                    logger.info("Trying Apify account 2 fallback...")
+                    client    = ApifyClient(APIFY_TOKEN_2)
+                    run       = client.actor("compass/crawler-google-places").call(run_input=run_input)
+                    raw_leads = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+                    logger.info(f"Apify account 2 OK — {len(raw_leads)} results")
+                except Exception as e2:
+                    logger.error(f"Apify account 2 also failed: {e2}")
+                    raw_leads = []
+            else:
+                logger.error("APIFY_API_TOKEN_2 not set — no fallback available")
+                raw_leads = []
         with open(CACHE_FILE, "w") as f:
             json.dump(raw_leads, f, indent=4)
         logger.info(f"Apify returned {len(raw_leads)} raw results — cached")

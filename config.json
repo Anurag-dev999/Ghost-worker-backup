@@ -2,12 +2,9 @@
   "scrape_interval_hours": 8,
   "lifecycle_check_hours": 6,
   "scheduled_queries": [
-    "cafes in Chandigarh Punjab India",
-    "cafes in Ludhiana Punjab India",
-    "cafes in Patiala Punjab India",
+    "cafes in ludhiana punjab INDIA",
     "cafes in delhi india",
-    "cafes in delhi"
+    "clinics in chandigrah india"
   ],
-  "last_updated": "2026-06-30 17:12:43",
-  "pipeline_interval_hours": 1
+  "last_updated": "2026-07-07 12:27:25"
 }

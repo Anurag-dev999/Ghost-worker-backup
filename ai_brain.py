@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
-DB_PATH        = os.path.join(os.path.dirname(__file__), 'agency.db')
+
 
 
 def check_env():

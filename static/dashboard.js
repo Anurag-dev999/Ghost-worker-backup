@@ -1,90 +1,64 @@
 function showToast(msg, err) {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.style.background = err ? '#3d0f0f' : '#1e2d45';
-  t.style.color = err ? '#f85149' : '#58a6ff';
+  t.className = 'toast' + (err ? ' err' : '');
   t.style.display = 'block';
   setTimeout(() => t.style.display = 'none', 3000);
 }
 
-
-
 function copyText(text, btn) {
+  if (!text) { showToast('Nothing to copy', true); return; }
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text).then(() => {
       const o = btn.textContent;
       btn.textContent = 'Copied!';
       setTimeout(() => btn.textContent = o, 1500);
-      showToast('Tracker link copied!');
+      showToast('Copied!');
     });
   } else {
     const ta = document.createElement('textarea');
     ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
     document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
+    ta.focus(); ta.select();
     try {
       document.execCommand('copy');
       const o = btn.textContent;
       btn.textContent = 'Copied!';
       setTimeout(() => btn.textContent = o, 1500);
-      showToast('Tracker link copied!');
-    } catch (e) {
-      prompt('Copy this tracker link manually:', text);
-    }
+      showToast('Copied!');
+    } catch (e) { prompt('Copy this:', text); }
     document.body.removeChild(ta);
   }
 }
 
-function updateStatus(id, status, btn) {
-  fetch('/api/update_status', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lead_id: id, new_status: status })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.success) {
-      showToast('Status updated: ' + status);
-      setTimeout(() => location.reload(), 800);
-    } else {
-      showToast(d.error || 'Update failed', true);
-    }
-  })
-  .catch(e => showToast('Network error', true));
-}
-
-
 function runQuery() {
-  const inp = document.getElementById('query-inp');
-  const q = inp.value.trim();
+  const inp   = document.getElementById('query-inp');
+  const q     = inp.value.trim();
   if (!q) { showToast('Enter a search query first', true); return; }
 
   const badge = document.getElementById('running-badge');
   if (badge) badge.style.display = 'inline-block';
 
-  // Step 1: Add to scheduler queue
+  // Add to scheduler queue first
   fetch('/api/add_query', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: q })
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({query: q})
   }).then(r => r.json()).then(d => {
     if (!d.success) {
       showToast(d.error || 'Failed to add query', true);
       if (badge) badge.style.display = 'none';
       return;
     }
-
-    // Step 2: Run pipeline immediately
+    // Then run pipeline
     fetch('/api/run_query', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: q })
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query: q})
     }).then(r => r.json()).then(d2 => {
       if (d2.success) {
-        showToast('Pipeline started + added to scheduler: ' + q);
+        showToast('Pipeline started: ' + q);
         inp.value = '';
         addQueryTag(q);
         let count = 0;
@@ -111,13 +85,13 @@ function runQuery() {
 function addQueryTag(q) {
   const tags = document.getElementById('query-tags');
   if (!tags) return;
-  const existing = Array.from(tags.querySelectorAll('.qtag'))
-    .map(el => el.dataset.query);
+  const existing = Array.from(tags.querySelectorAll('.qtag')).map(el => el.dataset.query);
   if (existing.includes(q)) return;
   const div = document.createElement('div');
   div.className = 'qtag';
   div.dataset.query = q;
-  div.innerHTML = q + ' <span class="qtag-x" onclick="removeQuery(this.parentElement.dataset.query)">&times;</span>';
+  div.innerHTML = q + ' <span class="qx" data-query="' + q.replace(/"/g,'&quot;') + '">×</span>';
+  div.querySelector('.qx').addEventListener('click', function() { removeQuery(this.dataset.query); });
   tags.appendChild(div);
 }
 
@@ -125,11 +99,9 @@ function removeQuery(q) {
   if (!q) return;
   fetch('/api/remove_query', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: q })
-  })
-  .then(r => r.json())
-  .then(d => {
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({query: q})
+  }).then(r => r.json()).then(d => {
     if (d.success) {
       document.querySelectorAll('.qtag').forEach(el => {
         if (el.dataset.query === q) el.remove();
@@ -140,99 +112,119 @@ function removeQuery(q) {
 }
 
 function saveConfig() {
-  const scrape   = parseInt(document.getElementById('scrape-interval').value) || 12;
-  const pipeline = parseInt(document.getElementById('pipeline-interval').value) || 1;
-  const life     = parseInt(document.getElementById('lifecycle-interval').value) || 6;
-
-  if (scrape < 1 || pipeline < 1 || life < 1) {
-    showToast('Values must be at least 1 hour', true);
-    return;
-  }
-
+  const scrape = parseInt(document.getElementById('scrape-interval').value) || 12;
+  const life   = parseInt(document.getElementById('lifecycle-interval').value) || 6;
+  if (scrape < 1 || life < 1) { showToast('Values must be at least 1 hour', true); return; }
   fetch('/api/update_config', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      scrape_interval_hours:   scrape,
-      pipeline_interval_hours: pipeline,
-      lifecycle_check_hours:   life
-    })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.success) showToast('Scheduler settings saved!');
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({scrape_interval_hours: scrape, lifecycle_check_hours: life})
+  }).then(r => r.json()).then(d => {
+    if (d.success) showToast('Settings saved!');
     else showToast(d.error || 'Save failed', true);
   });
 }
 
 function refreshLogs() {
-  fetch('/api/logs')
-  .then(r => r.json())
-  .then(d => {
+  fetch('/api/logs').then(r => r.json()).then(d => {
     const box = document.getElementById('log-box');
-    if (box) {
-      box.textContent = d.logs || 'No logs yet.';
-      box.scrollTop = box.scrollHeight;
-    }
-  })
-  .catch(() => {
+    if (box) { box.textContent = d.logs || 'No logs yet.'; box.scrollTop = box.scrollHeight; }
+  }).catch(() => {
     const box = document.getElementById('log-box');
     if (box) box.textContent = 'Could not load logs.';
   });
 }
 
-// Init on page load
-document.addEventListener('DOMContentLoaded', () => {
-  // Enter key on query input
-  const inp = document.getElementById('query-inp');
-  if (inp) {
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') runQuery();
+// ── Sort ─────────────────────────────────────────────────────────────────────
+
+function applySort() {
+  const mode      = document.getElementById('sort-sel').value;
+  const batchWrap = document.getElementById('batch-wrap');
+  const batches   = Array.from(batchWrap.querySelectorAll('.batch'));
+
+  if (mode === 'batch') {
+    // Default: newest batch first — reload preserves server order
+    location.reload();
+    return;
+  }
+
+  // Collect ALL cards across all batches
+  const allCards = [];
+  batches.forEach(batch => {
+    batch.querySelectorAll('.lead-card').forEach(card => {
+      allCards.push({card, batch});
+    });
+  });
+
+  if (mode === 'id_asc') {
+    allCards.sort((a, b) => parseInt(a.card.dataset.id) - parseInt(b.card.dataset.id));
+  } else if (mode === 'name_az') {
+    allCards.sort((a, b) => (a.card.dataset.name || '').localeCompare(b.card.dataset.name || ''));
+  } else if (mode === 'scraped_new') {
+    allCards.sort((a, b) => {
+      const da = a.card.dataset.created || '';
+      const db = b.card.dataset.created || '';
+      return db.localeCompare(da);
     });
   }
 
-  // Load logs immediately
-  refreshLogs();
+  // Flatten into a single batch when sorted
+  batchWrap.innerHTML = '';
+  const flatBatch = document.createElement('div');
+  flatBatch.className = 'batch';
+  flatBatch.innerHTML = '<div class="batch-header"><span class="batch-label">All Leads — sorted by ' +
+    {id_asc:'ID', name_az:'Name A–Z', scraped_new:'Newest First'}[mode] +
+    '</span><span class="batch-count">' + allCards.length + ' leads</span></div>';
+  allCards.forEach(({card}) => flatBatch.appendChild(card));
+  batchWrap.appendChild(flatBatch);
 
-  // Refresh logs every 15 seconds
-  setInterval(refreshLogs, 15000);
+  // Re-wire buttons in the newly moved cards
+  wireButtons();
+}
 
-  // Auto-refresh full page every 60 seconds
-  setInterval(() => location.reload(), 60000);
-});
+// ── Button wiring (called on load + after sort) ────────────────────────────
 
-// Pause/Resume outreach for a lead
-document.addEventListener('DOMContentLoaded', function() {
+function wireButtons() {
   document.querySelectorAll('.pause-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      const id     = parseInt(this.dataset.id);
-      const paused = parseInt(this.dataset.paused);
+    // Remove existing listener by cloning
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', function() {
+      const id      = parseInt(this.dataset.id);
+      const paused  = parseInt(this.dataset.paused);
       const newPaused = paused === 1 ? 0 : 1;
-      const action = newPaused === 1 ? 'Pause' : 'Resume';
+      const action  = newPaused === 1 ? 'Pause' : 'Resume';
       if (!confirm(action + ' outreach for this lead?')) return;
       fetch('/api/pause_lead', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({lead_id: id, paused: newPaused})
       }).then(r => r.json()).then(d => {
-        if (d.success) {
-          showToast('Outreach ' + (newPaused ? 'paused' : 'resumed'));
-          setTimeout(() => location.reload(), 600);
-        } else showToast(d.error, true);
+        if (d.success) { showToast('Outreach ' + (newPaused ? 'paused' : 'resumed')); setTimeout(() => location.reload(), 600); }
+        else showToast(d.error, true);
       });
     });
   });
 
-  // Toggle message drawer
   document.querySelectorAll('.msg-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', function() {
       const id     = this.dataset.id;
       const drawer = document.getElementById('msgs-' + id);
-      if (drawer) {
-        const isOpen = drawer.style.display !== 'none';
-        drawer.style.display = isOpen ? 'none' : 'block';
-        this.textContent = isOpen ? '📋 Msgs' : '✖ Close';
-      }
+      if (!drawer) return;
+      const isOpen = drawer.style.display !== 'none';
+      drawer.style.display = isOpen ? 'none' : 'block';
+      this.textContent = isOpen ? '📋 Msgs' : '✖ Close';
     });
   });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', function() {
+  wireButtons();
+  refreshLogs();
+  setInterval(refreshLogs, 15000);
+  setInterval(() => location.reload(), 60000);
 });

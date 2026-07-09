@@ -464,7 +464,7 @@ def api_delete_lead():
         with get_db() as conn:
             # Get S3 URL before deleting
             lead = conn.execute(
-                "SELECT s3_url, business_name FROM leads WHERE id=?",
+                "SELECT s3_url, business_name, phone FROM leads WHERE id=?",
                 (lead_id,)
             ).fetchone()
 
@@ -483,6 +483,17 @@ def api_delete_lead():
                     logger.info(f"S3 deleted: {filename} for {lead['business_name']}")
                 except Exception as e:
                     logger.error(f"S3 delete failed: {e}")
+
+            # Auto-blacklist before deleting
+            if lead:
+                try:
+                    conn.execute('''
+                        INSERT OR IGNORE INTO blacklist (phone, business_name, reason)
+                        VALUES (?, ?, ?)
+                    ''', (lead['phone'], lead['business_name'], 'Deleted from dashboard'))
+                    logger.info(f"Auto-blacklisted: {lead['business_name']} ({lead['phone']})")
+                except Exception as bl_err:
+                    logger.warning(f"Blacklist insert failed: {bl_err}")
 
             # Delete from DB
             conn.execute("DELETE FROM leads WHERE id=?", (lead_id,))
@@ -755,7 +766,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#0a0e1a;color:#e0e6f0;mi
   <div class="nav-links">
     <a href="/admin">Dashboard</a>
     <a href="/admin/templates" class="active">Templates</a>
-    <a href="/api/export_leads" class="btn bk bs" style="font-size:12px;padding:6px 12px;text-decoration:none">📥 Export CSV</a>
   </div>
 </div>
 
@@ -938,305 +948,383 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Ghost Worker</title>
+<title>Ghost Worker — Dashboard</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',Arial,sans-serif;background:#0a0e1a;color:#e0e6f0;min-height:100vh}
-.topbar{background:#0d1117;border-bottom:1px solid #1e2d45;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
-.logo{font-size:18px;font-weight:700;color:#58a6ff}.logo span{color:#3fb950}
-.live{font-size:12px;color:#8b949e}
-.dot{width:7px;height:7px;border-radius:50%;background:#3fb950;display:inline-block;margin-right:5px;animation:pulse 2s infinite}
+:root{
+  --bg:#f5f4f0;
+  --surface:#ffffff;
+  --surface2:#fafaf8;
+  --border:#e8e6e0;
+  --border2:#d4d1c8;
+  --text:#1a1a18;
+  --text2:#5a5850;
+  --text3:#9a9890;
+  --accent:#1a1a18;
+  --blue:#2563eb;
+  --green:#16a34a;
+  --red:#dc2626;
+  --amber:#d97706;
+  --hot:#dc2626;
+  --warm:#d97706;
+  --radius:10px;
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+}
+body{font-family:-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+
+/* ── Topbar ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;display:flex;align-items:center;height:56px;gap:20px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
+.logo{font-size:16px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.logo em{font-style:normal;color:var(--text3);font-weight:400}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#16a34a;display:inline-block;animation:pulse 2s infinite;margin-right:5px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;padding:18px 24px}
-.stat{background:#161b27;border:1px solid #1e2d45;border-radius:10px;padding:18px}
-.slbl{font-size:11px;color:#8b949e;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px}
-.sval{font-size:28px;font-weight:700}
-.cb{color:#58a6ff}.cr{color:#f85149}.cg{color:#3fb950}.ca{color:#d29922}
-.panel{background:#161b27;border:1px solid #1e2d45;border-radius:10px;margin:0 24px 16px;padding:18px}
-.ptitle{font-size:13px;font-weight:600;color:#e0e6f0;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.qrow{display:flex;gap:8px;flex-wrap:wrap}
-.inp{background:#0d1117;border:1px solid #1e2d45;color:#e0e6f0;padding:9px 14px;border-radius:7px;font-size:13px;flex:1;min-width:200px}
-.inp:focus{outline:none;border-color:#58a6ff}
-.btn{padding:9px 16px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s}
-.btn:hover{opacity:.8}
-.bb{background:#1f6feb;color:#fff}.bg{background:#238636;color:#fff}
-.br{background:#da3633;color:#fff}.bk{background:#21262d;color:#e0e6f0}
-.bs{padding:5px 10px;font-size:11px;border-radius:6px}
-.irow{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-.iitem{display:flex;align-items:center;gap:7px;font-size:13px;color:#8b949e}
-.iitem input{width:58px;background:#0d1117;border:1px solid #1e2d45;color:#e0e6f0;padding:6px 10px;border-radius:6px;font-size:13px;text-align:center}
-.qtags{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
-.qtag{background:#1e2d45;color:#58a6ff;padding:4px 11px;border-radius:20px;font-size:12px;display:flex;align-items:center;gap:5px}
-.qx{cursor:pointer;color:#8b949e;font-size:13px}.qx:hover{color:#f85149}
-.sbar{padding:4px 24px 10px;display:flex;align-items:center;justify-content:space-between}
-.stitle{font-size:13px;font-weight:600;color:#e0e6f0}
-.ssub{font-size:12px;color:#8b949e}
-.tw{overflow-x:auto;padding:0 24px 30px}
-table{width:100%;border-collapse:collapse;font-size:13px}
-thead th{background:#161b27;color:#8b949e;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:10px 12px;text-align:left;border-bottom:1px solid #1e2d45}
-tbody tr{border-bottom:1px solid #1a2030;transition:background .15s}
-tbody tr:hover{background:#161b27}
-tbody tr.hot{border-left:3px solid #f85149;background:#1a0d0d;animation:hg 3s ease-in-out infinite}
-@keyframes hg{0%,100%{background:#1a0d0d}50%{background:#200f0f}}
-td{padding:11px 12px;vertical-align:middle}
+.live-time{font-size:12px;color:var(--text3)}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.tbtn{padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text2);text-decoration:none;display:inline-flex;align-items:center;gap:5px;transition:all .15s;white-space:nowrap}
+.tbtn:hover{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+.tbtn-dark{background:var(--text);color:#fff;border-color:var(--text)}
+.tbtn-dark:hover{background:#333;color:#fff}
+
+/* ── Stats ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:22px 28px 0}
+@media(max-width:768px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.slbl{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;font-weight:500}
+.sval{font-size:30px;font-weight:700;line-height:1;color:var(--text)}
+.sval.blue{color:var(--blue)}.sval.red{color:var(--red)}.sval.green{color:var(--green)}.sval.amber{color:var(--amber)}
+
+/* ── Panels ── */
+.panels{padding:18px 28px 0;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.panels{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.ptitle{font-size:13px;font-weight:600;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.ptitle-sub{font-size:11px;color:var(--text3);font-weight:400;margin-left:auto}
+
+/* ── Inputs ── */
+.inp{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 13px;border-radius:7px;font-size:13px;width:100%;outline:none;transition:border .15s;font-family:inherit}
+.inp:focus{border-color:var(--blue)}
+.qrow{display:flex;gap:8px}
+.qrow .inp{flex:1}
+
+/* ── Buttons ── */
+.btn{padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid transparent;transition:all .15s;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;font-family:inherit}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--text);color:#fff;border-color:var(--text)}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-amber{background:var(--amber);color:#fff}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--text2)}
+.btn-ghost:hover{background:var(--surface2);color:var(--text)}
+.btn-sm{padding:5px 10px;font-size:11px;border-radius:6px}
+.btn-xs{padding:3px 8px;font-size:11px;border-radius:5px}
+
+/* ── Query tags ── */
+.qtags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.qtag{background:var(--surface2);border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:20px;font-size:11px;display:flex;align-items:center;gap:5px}
+.qx{cursor:pointer;color:var(--text3);font-size:12px;line-height:1}.qx:hover{color:var(--red)}
+
+/* ── Irow ── */
+.irow{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.iitem{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text2)}
+.iitem input{width:58px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;text-align:center;outline:none;font-family:inherit}
+.iitem input:focus{border-color:var(--blue)}
+
+/* ── Running badge ── */
+.rbadge{background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:3px 10px;border-radius:20px;font-size:11px;display:none;font-weight:600;animation:pulse 1.5s infinite}
+
+/* ── Toolbar ── */
+.lead-toolbar{padding:18px 28px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lead-toolbar-title{font-size:15px;font-weight:700;color:var(--text)}
+.sort-sel{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;outline:none;font-family:inherit}
+.sort-sel:focus{border-color:var(--blue)}
+.lead-count{font-size:12px;color:var(--text3);margin-left:auto}
+
+/* ── Lead batches ── */
+.batch-wrap{padding:0 28px 30px}
+.batch{margin-bottom:28px}
+.batch-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid var(--border)}
+.batch-label{font-size:12px;font-weight:700;color:var(--text);letter-spacing:-.1px}
+.batch-meta{font-size:11px;color:var(--text3)}
+.batch-count{background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px}
+.batch-niche{display:inline-block;padding:2px 9px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-right:4px}
+
+/* ── Lead cards ── */
+.lead-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:8px;display:grid;grid-template-columns:32px 200px 100px 110px 100px 80px 80px 1fr;gap:12px;align-items:start;box-shadow:var(--shadow);transition:box-shadow .15s}
+.lead-card:hover{box-shadow:var(--shadow-md)}
+.lead-card.is-hot{border-left:3px solid var(--hot);background:linear-gradient(to right,#fff5f5,var(--surface))}
+.lead-card.is-warm{border-left:3px solid var(--warm)}
+@media(max-width:1200px){.lead-card{grid-template-columns:1fr 1fr;gap:8px}}
+
+.lc-id{font-size:11px;font-weight:700;color:var(--text3);padding-top:3px}
+.lc-name{font-size:13px;font-weight:600;color:var(--text);line-height:1.3}
+.lc-city{font-size:11px;color:var(--text3);margin-top:2px}
+.lc-phone{font-size:12px;color:var(--blue);font-weight:500;margin-top:4px;letter-spacing:.2px}
+.lc-niche .bx{font-size:10px}
+.lc-status .bx{font-size:11px}
+.lc-lifecycle .bx{font-size:11px;font-weight:700}
+.lc-clicks{font-size:13px;font-weight:700;color:var(--hot)}
+.lc-clicks.zero{color:var(--text3);font-weight:400}
+.lc-lastseen{font-size:11px;color:var(--text3)}
+.lc-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:flex-start}
+
+/* ── Badges ── */
 .bx{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
-.xhot{background:#3d0f0f;color:#f85149;border:1px solid #5c1a1a}
-.xwarm{background:#2d1f00;color:#d29922;border:1px solid #4a3200}
-.xnew{background:#0d1f3d;color:#58a6ff;border:1px solid #1a3a6b}
-.xcold{background:#0d2020;color:#39d0d0;border:1px solid #1a4040}
-.xdead{background:#1a1a1a;color:#6e7681;border:1px solid #30363d}
-.xcont{background:#0d2a1a;color:#3fb950;border:1px solid #1a4a2a}
-.xdep{background:#0d2a1a;color:#3fb950}
-.xai{color:#d29922;background:#1a1a1a}
-.xblt{color:#58a6ff;background:#1a1a1a}
-.xscr{color:#8b949e;background:#1a1a1a}
-.cw{display:flex;align-items:center;gap:7px}
-.cb2{height:4px;border-radius:2px;background:#f85149;min-width:3px}
-.cn{font-weight:600;color:#f85149}
-.acts{display:flex;gap:5px;flex-wrap:wrap}
-.nm{font-weight:500;color:#e0e6f0;max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ns{font-size:11px;color:#8b949e;margin-top:2px}
-.lbox{background:#0d1117;border:1px solid #1e2d45;border-radius:7px;padding:12px;height:200px;overflow-y:auto;font-family:monospace;font-size:11px;color:#8b949e;white-space:pre-wrap;word-break:break-all}
-.toast{position:fixed;bottom:20px;right:20px;background:#1e2d45;color:#58a6ff;padding:10px 16px;border-radius:8px;font-size:13px;border:1px solid #2a4060;display:none;z-index:999}
-.rbadge{background:#0d2a1a;color:#3fb950;border:1px solid #1a4a2a;padding:3px 10px;border-radius:20px;font-size:11px;display:none}
+.xhot{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.xwarm{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.xnew{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
+.xcold{background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc}
+.xdead{background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db}
+.xcont{background:#dcfce7;color:#15803d;border:1px solid #86efac}
+.xdep{background:#dcfce7;color:#15803d}
+.xai{background:#fef3c7;color:#92400e}
+.xblt{background:#dbeafe;color:#1d4ed8}
+.xscr{background:#f3f4f6;color:#6b7280}
+
+/* ── Msg drawer ── */
+.msg-drawer{display:none;margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:12px;grid-column:1/-1}
+.msg-section{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.msg-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.msg-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.msg-body{color:var(--text2);line-height:1.6;white-space:pre-wrap;font-size:12px}
+.msg-meta{font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+
+/* ── Logs ── */
+.log-panel{margin:0 28px 28px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.lbox{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:12px;height:200px;overflow-y:auto;font-family:'SF Mono','Fira Code',monospace;font-size:11px;color:var(--text2);white-space:pre-wrap;word-break:break-all;margin-top:10px}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:9999;box-shadow:var(--shadow-md)}
+.toast.err{background:var(--red)}
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="logo">Ghost<span>Worker</span> <span style="color:#8b949e;font-size:12px;font-weight:400">Control Tower</span></div>
-  <div class="live"><span class="dot"></span>{{ now }}</div>
-
-  <div class="nav-links" style="display:flex;gap:12px">
-    <a href="/admin/templates" style="color:#8b949e;text-decoration:none;font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #1e2d45">📄 Templates</a>
+  <div class="logo">Ghost<em>Worker</em></div>
+  <div class="live-time"><span class="live-dot"></span>{{ now }}</div>
+  <div class="topbar-right">
+    <a href="/api/export_leads" class="tbtn">📥 Export CSV</a>
+    <a href="/admin/templates" class="tbtn">📄 Templates</a>
   </div>
 </div>
 
+<!-- Stats -->
 <div class="stats">
-  <div class="stat"><div class="slbl">Total Leads</div><div class="sval cb">{{ total }}</div></div>
-  <div class="stat"><div class="slbl">HOT Leads</div><div class="sval cr">{{ hot }}</div></div>
-  <div class="stat"><div class="slbl">Deployed</div><div class="sval cg">{{ deployed }}</div></div>
-  <div class="stat"><div class="slbl">Pending AI</div><div class="sval ca">{{ pending }}</div></div>
+  <div class="stat"><div class="slbl">Total Leads</div><div class="sval blue">{{ total }}</div></div>
+  <div class="stat"><div class="slbl">HOT Leads</div><div class="sval red">{{ hot }}</div></div>
+  <div class="stat"><div class="slbl">Deployed</div><div class="sval green">{{ deployed }}</div></div>
+  <div class="stat"><div class="slbl">Pending AI</div><div class="sval amber">{{ pending }}</div></div>
 </div>
 
-<div class="panel">
-  <div class="ptitle">Run Mission <span class="rbadge" id="running-badge">Pipeline Running...</span></div>
-  <div class="qrow">
-    <input class="inp" id="query-inp" placeholder='e.g. Gyms in Lucknow'>
-    <button class="btn bg" id="run-btn">Run Now</button>
+<!-- Control Panels -->
+<div class="panels">
+  <!-- Run Mission -->
+  <div class="panel">
+    <div class="ptitle">
+      🚀 Run Mission
+      <span class="rbadge" id="running-badge">Running...</span>
+    </div>
+    <div class="qrow">
+      <input class="inp" id="query-inp" placeholder='e.g. Gyms in Lucknow India'>
+      <button class="btn btn-primary" id="run-btn">Run</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:6px">Scrape → AI → Build → Deploy → Outreach. Auto-added to scheduler.</div>
+    <div class="qtags" id="query-tags">
+      {% for q in scheduled_queries %}
+      <div class="qtag" data-query="{{ q }}">{{ q }}<span class="qx" data-query="{{ q }}">×</span></div>
+      {% endfor %}
+    </div>
   </div>
-  <div style="font-size:12px;color:#8b949e;margin-top:7px">Full pipeline: Scrape → AI → Build → Deploy. Auto-added to scheduler.</div>
-  <div style="margin-top:14px;font-size:12px;color:#8b949e;margin-bottom:7px">Scheduled queries (every {{ scrape_interval }}h):</div>
-  <div class="qtags" id="query-tags">
-    {% for q in scheduled_queries %}
-    <div class="qtag" data-query="{{ q }}">{{ q }}<span class="qx" data-query="{{ q }}">×</span></div>
-    {% endfor %}
+
+  <!-- Scheduler -->
+  <div class="panel">
+    <div class="ptitle">⏱ Scheduler <span class="ptitle-sub">every {{ scrape_interval }}h</span></div>
+    <div class="irow">
+      <div class="iitem"><span>Scrape every</span><input type="number" id="scrape-interval" value="{{ scrape_interval }}" min="1" max="48"><span>hrs</span></div>
+      <div class="iitem"><span>Lifecycle every</span><input type="number" id="lifecycle-interval" value="{{ lifecycle_interval }}" min="1" max="24"><span>hrs</span></div>
+      <button class="btn btn-primary btn-sm" id="save-config-btn">Save</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:10px">One query per interval, rotating through the queue above.</div>
   </div>
 </div>
 
-<div class="panel">
-  <div class="ptitle">Scheduler Settings</div>
-  <div class="irow">
-    <div class="iitem"><span>Scrape every</span><input type="number" id="scrape-interval" value="{{ scrape_interval }}" min="1" max="48"><span>hrs</span></div>
-    <div class="iitem"><span>Pipeline every</span><input type="number" id="pipeline-interval" value="{{ pipeline_interval }}" min="1" max="24"><span>hrs</span></div>
-    <div class="iitem"><span>Lifecycle every</span><input type="number" id="lifecycle-interval" value="{{ lifecycle_interval }}" min="1" max="24"><span>hrs</span></div>
-    <button class="btn bb bs" id="save-config-btn">Save</button>
-  </div>
+<!-- Lead Pipeline Toolbar -->
+<div class="lead-toolbar">
+  <span class="lead-toolbar-title">Lead Pipeline</span>
+  <select class="sort-sel" id="sort-sel" onchange="applySort()">
+    <option value="batch">Newest Batch First</option>
+    <option value="id_asc">ID Ascending</option>
+    <option value="name_az">Name A–Z</option>
+    <option value="scraped_new">Last Scraped (Newest)</option>
+  </select>
+  <span class="lead-count">{{ total }} leads · HOT on top within each batch</span>
 </div>
 
-<div class="sbar">
-  <span class="stitle">Lead Pipeline</span>
-  <span class="ssub">HOT always on top</span>
-</div>
+<!-- Lead Batches -->
+<div class="batch-wrap" id="batch-wrap">
+{% set ns = namespace(prev_query='', prev_date='', batch_num=0) %}
+{% for lead in leads %}
+  {% set curr_query = lead.query_string or 'Unknown Query' %}
+  {% set curr_date  = (lead.created_at or '')[:10] %}
+  {% set batch_key  = curr_query + '|' + curr_date %}
 
-<div class="tw">
-<table>
-  <thead><tr>
-    <th>#</th><th>Business</th><th>Niche</th><th>Status</th>
-    <th>Lifecycle</th><th>Clicks</th><th>Last Seen</th><th>Actions</th>
-  </tr></thead>
-  <tbody>
-  {% for lead in leads %}
-  <tr class="{{ 'hot' if lead.lifecycle_status == 'HOT' else '' }}">
-    <td style="color:#8b949e;font-size:12px;font-weight:600;">{{ lead.id }}</td>
-    <td>
-      <div class="nm" title="{{ lead.business_name }}">{{ lead.business_name[:30] }}{% if lead.business_name|length > 30 %}…{% endif %}</div>
-      <div class="ns">{{ lead.city or '—' }}</div>
-    </td>
-    <td><span class="bx xnew">{{ lead.niche or '—' }}</span></td>
-    <td>
+  {% if loop.first or batch_key != (leads[loop.index0-1].query_string or '') + '|' + ((leads[loop.index0-1].created_at or '')[:10]) %}
+    {% if not loop.first %}</div>{% endif %}
+    {% set ns.batch_num = ns.batch_num + 1 %}
+    <div class="batch" data-batch="{{ ns.batch_num }}" data-query="{{ curr_query }}" data-date="{{ curr_date }}">
+    <div class="batch-header">
+      <span class="batch-label">{{ curr_query }}</span>
+      <span class="batch-meta">{{ curr_date }}</span>
+      <span class="batch-count">{{ leads | selectattr('query_string','equalto', curr_query) | list | length }} leads</span>
+    </div>
+  {% endif %}
+
+  <!-- Lead Card -->
+  <div class="lead-card {% if lead.lifecycle_status=='HOT' %}is-hot{% elif lead.lifecycle_status=='WARM' %}is-warm{% endif %}"
+       data-id="{{ lead.id }}"
+       data-name="{{ lead.business_name }}"
+       data-created="{{ lead.created_at or '' }}">
+
+    <div class="lc-id">#{{ lead.id }}</div>
+
+    <div>
+      <div class="lc-name">{{ lead.business_name[:28] }}{% if lead.business_name|length > 28 %}…{% endif %}</div>
+      <div class="lc-city">{{ lead.city or '—' }}</div>
+      <div class="lc-phone">{% if lead.phone %}📞 {{ lead.phone }}{% endif %}</div>
+    </div>
+
+    <div class="lc-niche">
+      <span class="bx xnew">{{ (lead.niche or '—')[:14] }}</span>
+    </div>
+
+    <div class="lc-status">
       {% if lead.status=='Deployed' %}<span class="bx xdep">Deployed</span>
       {% elif lead.status=='AI_Complete' %}<span class="bx xai">AI Done</span>
       {% elif lead.status=='Built' %}<span class="bx xblt">Built</span>
-      {% elif lead.status=='Contacted' %}<span class="bx xcont">Contacted</span>
       {% else %}<span class="bx xscr">{{ lead.status }}</span>{% endif %}
-    </td>
-    <td>
-      {% if lead.lifecycle_status=='HOT' %}<span class="bx xhot">HOT</span>
+    </div>
+
+    <div class="lc-lifecycle">
+      {% if lead.lifecycle_status=='HOT' %}<span class="bx xhot">🔥 HOT</span>
       {% elif lead.lifecycle_status=='WARM' %}<span class="bx xwarm">WARM</span>
       {% elif lead.lifecycle_status=='COLD' %}<span class="bx xcold">COLD</span>
       {% elif lead.lifecycle_status=='DEAD' %}<span class="bx xdead">DEAD</span>
-      {% elif lead.lifecycle_status=='Contacted' %}<span class="bx xcont">Sent</span>
+      {% elif lead.lifecycle_status=='Contacted' %}<span class="bx xcont">Contacted</span>
       {% else %}<span class="bx xnew">NEW</span>{% endif %}
-    </td>
-    <td>
-      {% if lead.click_count and lead.click_count > 0 %}
-      <div class="cw"><div class="cb2" style="width:{{ [lead.click_count*10,60]|min }}px"></div><span class="cn">{{ lead.click_count }}</span></div>
-      {% else %}<span style="color:#30363d">—</span>{% endif %}
-    </td>
-    <td style="font-size:12px;color:#8b949e">{{ time_ago(lead.last_clicked) }}</td>
-    <td>
-      <div class="acts">
-        {% if lead.s3_url %}<a class="btn bk bs" href="{{ lead.s3_url }}" target="_blank">Site</a>{% endif %}
-        {% if lead.tracker_url %}<button class="btn bk bs copy-btn" data-url="{{ lead.tracker_url }}">Link</button>{% endif %}
+    </div>
 
+    <div class="lc-clicks {% if not lead.click_count or lead.click_count == 0 %}zero{% endif %}">
+      {% if lead.click_count and lead.click_count > 0 %}{{ lead.click_count }} clicks{% else %}—{% endif %}
+    </div>
 
-        {% if lead.phone %}
-        {% set wa_msg = '' %}
-        {% if lead.outreach_stage == 1 %}{% set wa_msg = lead.wa_draft_1 or '' %}
-        {% elif lead.outreach_stage == 2 %}{% set wa_msg = lead.wa_draft_hot or lead.wa_draft_1 or '' %}
-        {% elif lead.outreach_stage == 3 %}{% set wa_msg = lead.wa_draft_2 or '' %}
-        {% elif lead.outreach_stage == 4 %}{% set wa_msg = lead.wa_draft_3 or '' %}
-        {% elif lead.outreach_stage == 5 %}{% set wa_msg = lead.wa_draft_4 or '' %}
-        {% endif %}
-        <a class="btn bg bs"
-        href="https://wa.me/{{ lead.phone|replace('+','')|replace(' ','')|replace('-','') }}{% if wa_msg %}?text={{ wa_msg|replace('[LINK]', lead.tracker_url or '')|urlencode }}{% endif %}"
-        target="_blank"
-        title="Stage {{ lead.outreach_stage }} message">WA S{{ lead.outreach_stage }}</a>
-        {% endif %}
+    <div class="lc-lastseen">{{ time_ago(lead.last_clicked) }}</div>
 
+    <div class="lc-actions">
+      {% if lead.tracker_url %}<button class="btn btn-ghost btn-sm copy-btn" data-url="{{ lead.tracker_url }}">🔗 Link</button>{% endif %}
 
-        {% if lead.outreach_paused %}
-        <button class="btn bb bs pause-btn" data-id="{{ lead.id }}" data-paused="1" style="background:#d29922">▶ Resume</button>
-        {% else %}
-        <button class="btn br bs pause-btn" data-id="{{ lead.id }}" data-paused="0">⏸ Pause</button>
-        {% endif %}
-        <button class="btn bk bs msg-btn" data-id="{{ lead.id }}">📋 Msgs</button>
-        <button class="btn bb bs status-btn" data-id="{{ lead.id }}" data-status="Contacted">Sent</button>
-        <button class="btn br bs delete-btn" data-id="{{ lead.id }}">Del</button>
+      {% if lead.phone %}
+      {% set wa_msg = '' %}
+      {% if lead.outreach_stage == 1 %}{% set wa_msg = lead.wa_draft_1 or '' %}
+      {% elif lead.outreach_stage == 2 %}{% set wa_msg = lead.wa_draft_hot or lead.wa_draft_1 or '' %}
+      {% elif lead.outreach_stage == 3 %}{% set wa_msg = lead.wa_draft_2 or '' %}
+      {% elif lead.outreach_stage == 4 %}{% set wa_msg = lead.wa_draft_3 or '' %}
+      {% elif lead.outreach_stage == 5 %}{% set wa_msg = lead.wa_draft_4 or '' %}
+      {% endif %}
+      <a class="btn btn-green btn-sm"
+         href="https://wa.me/{{ lead.phone|replace('+','')|replace(' ','')|replace('-','') }}{% if wa_msg %}?text={{ wa_msg|replace('[LINK]', lead.tracker_url or '')|urlencode }}{% endif %}"
+         target="_blank">WA S{{ lead.outreach_stage or 0 }}</a>
+      {% endif %}
+
+      {% if lead.outreach_paused %}
+      <button class="btn btn-amber btn-sm pause-btn" data-id="{{ lead.id }}" data-paused="1">▶ Resume</button>
+      {% else %}
+      <button class="btn btn-ghost btn-sm pause-btn" data-id="{{ lead.id }}" data-paused="0">⏸ Pause</button>
+      {% endif %}
+
+      <button class="btn btn-ghost btn-sm msg-btn" data-id="{{ lead.id }}">📋 Msgs</button>
+      <button class="btn btn-red btn-sm delete-btn" data-id="{{ lead.id }}">Del</button>
+    </div>
+
+    <!-- Message Drawer (spans full row) -->
+    <div class="msg-drawer" id="msgs-{{ lead.id }}">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+        Messages · {{ lead.business_name[:30] }} · Stage {{ lead.outreach_stage or 0 }} · Followups: {{ lead.followup_count or 0 }}
       </div>
-      <!-- Message drawer -->
-      <div class="msg-drawer" id="msgs-{{ lead.id }}" style="display:none;margin-top:10px;background:#0d1117;border:1px solid #1e2d45;border-radius:8px;padding:12px;font-size:12px;max-width:500px">
-        <div style="color:#8b949e;margin-bottom:8px;font-size:11px;text-transform:uppercase;letter-spacing:1px">Messages for ID:{{ lead.id }}</div>
 
-        {% if lead.wa_draft_1 %}
-        <div style="margin-bottom:10px">
-          <div style="color:#3fb950;font-size:11px;margin-bottom:4px">📱 Cold WA (Stage 1)</div>
-          <div style="color:#e0e6f0;line-height:1.5;white-space:pre-wrap">{{ lead.wa_draft_1 }}</div>
-          <button class="btn bk bs copy-btn" data-url="{{ lead.wa_draft_1 }}" style="margin-top:5px">Copy</button>
-        </div>
-        {% endif %}
+      {% if lead.wa_draft_1 %}
+      <div class="msg-section">
+        <div class="msg-label" style="color:var(--green)">📱 Cold WA (Stage 1)</div>
+        <div class="msg-body">{{ lead.wa_draft_1 }}</div>
+        <div style="margin-top:6px"><button class="btn btn-ghost btn-xs copy-btn" data-url="{{ lead.wa_draft_1 }}">Copy</button></div>
+      </div>{% endif %}
 
-        {% if lead.wa_draft_hot %}
-        <div style="margin-bottom:10px;border-left:3px solid #f85149;padding-left:8px">
-          <div style="color:#f85149;font-size:11px;margin-bottom:4px">🔥 HOT STRIKE WA</div>
-          <div style="color:#e0e6f0;line-height:1.5;white-space:pre-wrap">{{ lead.wa_draft_hot }}</div>
-          <button class="btn br bs copy-btn" data-url="{{ lead.wa_draft_hot }}" style="margin-top:5px">Copy</button>
-        </div>
-        {% endif %}
+      {% if lead.wa_draft_hot %}
+      <div class="msg-section">
+        <div class="msg-label" style="color:var(--red)">🔥 HOT Strike WA</div>
+        <div class="msg-body">{{ lead.wa_draft_hot }}</div>
+        <div style="margin-top:6px"><button class="btn btn-ghost btn-xs copy-btn" data-url="{{ lead.wa_draft_hot }}">Copy</button></div>
+      </div>{% endif %}
 
-        {% if lead.wa_draft_2 %}
-        <div style="margin-bottom:10px">
-          <div style="color:#d29922;font-size:11px;margin-bottom:4px">📱 Followup 1 WA</div>
-          <div style="color:#e0e6f0;line-height:1.5;white-space:pre-wrap">{{ lead.wa_draft_2 }}</div>
-          <button class="btn bk bs copy-btn" data-url="{{ lead.wa_draft_2 }}" style="margin-top:5px">Copy</button>
-        </div>
-        {% endif %}
+      {% if lead.wa_draft_2 %}
+      <div class="msg-section">
+        <div class="msg-label" style="color:var(--amber)">📱 Followup 1 WA</div>
+        <div class="msg-body">{{ lead.wa_draft_2 }}</div>
+        <div style="margin-top:6px"><button class="btn btn-ghost btn-xs copy-btn" data-url="{{ lead.wa_draft_2 }}">Copy</button></div>
+      </div>{% endif %}
 
-        {% if lead.wa_draft_3 %}
-        <div style="margin-bottom:10px">
-          <div style="color:#58a6ff;font-size:11px;margin-bottom:4px">📱 Followup 2 WA</div>
-          <div style="color:#e0e6f0;line-height:1.5;white-space:pre-wrap">{{ lead.wa_draft_3 }}</div>
-          <button class="btn bk bs copy-btn" data-url="{{ lead.wa_draft_3 }}" style="margin-top:5px">Copy</button>
-        </div>
-        {% endif %}
+      {% if lead.wa_draft_3 %}
+      <div class="msg-section">
+        <div class="msg-label" style="color:var(--blue)">📱 Followup 2 WA</div>
+        <div class="msg-body">{{ lead.wa_draft_3 }}</div>
+        <div style="margin-top:6px"><button class="btn btn-ghost btn-xs copy-btn" data-url="{{ lead.wa_draft_3 }}">Copy</button></div>
+      </div>{% endif %}
 
-        {% if lead.wa_draft_4 %}
-        <div style="margin-bottom:10px">
-          <div style="color:#6e7681;font-size:11px;margin-bottom:4px">📱 Final WA</div>
-          <div style="color:#e0e6f0;line-height:1.5;white-space:pre-wrap">{{ lead.wa_draft_4 }}</div>
-          <button class="btn bk bs copy-btn" data-url="{{ lead.wa_draft_4 }}" style="margin-top:5px">Copy</button>
-        </div>
-        {% endif %}
+      {% if lead.wa_draft_4 %}
+      <div class="msg-section">
+        <div class="msg-label" style="color:var(--text3)">📱 Final WA</div>
+        <div class="msg-body">{{ lead.wa_draft_4 }}</div>
+        <div style="margin-top:6px"><button class="btn btn-ghost btn-xs copy-btn" data-url="{{ lead.wa_draft_4 }}">Copy</button></div>
+      </div>{% endif %}
 
-        <div style="color:#8b949e;font-size:11px;margin-top:8px">Stage: {{ lead.outreach_stage or 0 }} | Followups: {{ lead.followup_count or 0 }} | Paused: {{ 'Yes' if lead.outreach_paused else 'No' }}</div>
-      </div>
-    </td>
+      <div class="msg-meta">Paused: {{ 'Yes' if lead.outreach_paused else 'No' }} · Last contacted: {{ time_ago(lead.last_contacted) }} · Added: {{ time_ago(lead.created_at) }}</div>
+    </div>
 
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+  </div>
+{% endfor %}
+{% if leads %}</div>{% endif %}
 </div>
 
-<div class="panel">
-  <div class="ptitle">Live Logs <button class="btn bk bs" id="refresh-logs-btn" style="margin-left:auto">Refresh</button></div>
+<!-- Live Logs -->
+<div class="log-panel">
+  <div class="ptitle">📋 Live Logs <button class="btn btn-ghost btn-sm" id="refresh-logs-btn" style="margin-left:auto">Refresh</button></div>
   <div class="lbox" id="log-box">Loading...</div>
 </div>
 
 <div class="toast" id="toast"></div>
-
 <script src="/static/dashboard.js"></script>
-
 <script>
-// Wire up all buttons using event listeners — no inline onclick needed
 document.addEventListener('DOMContentLoaded', function() {
-
-  // Run query button
   document.getElementById('run-btn').addEventListener('click', runQuery);
-
-  // Save config button
   document.getElementById('save-config-btn').addEventListener('click', saveConfig);
-
-  // Refresh logs button
   document.getElementById('refresh-logs-btn').addEventListener('click', refreshLogs);
-
-  // Copy link buttons
-  document.querySelectorAll('.copy-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      copyText(this.dataset.url, this);
+  document.querySelectorAll('.copy-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){ copyText(this.dataset.url, this); });
+  });
+  document.querySelectorAll('.delete-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      if(!confirm('Delete this lead permanently?')) return;
+      fetch('/api/delete_lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lead_id:parseInt(this.dataset.id)})})
+      .then(r=>r.json()).then(d=>{ if(d.success){showToast('Deleted');setTimeout(()=>location.reload(),600);}else showToast(d.error,true); });
     });
   });
-
-  // Status buttons
-  document.querySelectorAll('.status-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      updateStatus(parseInt(this.dataset.id), this.dataset.status, this);
-    });
+  document.querySelectorAll('.qx').forEach(function(el){
+    el.addEventListener('click', function(){ removeQuery(this.dataset.query); });
   });
-
-  // Delete buttons
-  document.querySelectorAll('.delete-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      const id = parseInt(this.dataset.id);
-      if (!confirm('Delete this lead permanently?')) return;
-      fetch('/api/delete_lead', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({lead_id: id})
-      }).then(r => r.json()).then(d => {
-        if (d.success) { showToast('Lead deleted'); setTimeout(() => location.reload(), 600); }
-        else showToast(d.error, true);
-      });
-    });
-  });
-
-  // Remove query tags
-  document.querySelectorAll('.qx').forEach(function(el) {
-    el.addEventListener('click', function() {
-      removeQuery(this.dataset.query);
-    });
-  });
-
-  // Enter key on query input
-  document.getElementById('query-inp').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') runQuery();
-  });
-
-  // Load logs
+  document.getElementById('query-inp').addEventListener('keydown', function(e){ if(e.key==='Enter') runQuery(); });
   refreshLogs();
   setInterval(refreshLogs, 15000);
-  setInterval(() => location.reload(), 60000);
+  setInterval(()=>location.reload(), 60000);
 });
 </script>
 </body>
@@ -1278,13 +1366,13 @@ def templates_page():
             if not key.endswith('/'):
                 s3_assets.append({
                     'key':  key,
-                    'url':  f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{key}",
+                    'url':  f"https://{bucket}.s3.ap-south-1.amazonaws.com/{key}",
                     'size': round(obj['Size'] / 1024, 1)
                 })
     except Exception as e:
         logger.error(f"S3 list error: {e}")
 
-    bucket_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com"
+    bucket_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.ap-south-1.amazonaws.com"
 
     return render_template_string(
         TEMPLATES_HTML,
@@ -1382,7 +1470,7 @@ def api_upload_asset():
             }
         )
 
-        url = f"https://{bucket}.s3.{os.getenv('AWS_REGION', 'ap-south-1')}.amazonaws.com/{key}"
+        url = f"https://{bucket}.s3.ap-south-1.amazonaws.com/{key}"
         logger.info(f"Asset uploaded: {key}")
 
         return jsonify({
@@ -1416,128 +1504,6 @@ def api_delete_template():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-@app.route('/api/export_leads')
-@auth_required
-def export_leads():
-    """Download leads as Excel file for calling team."""
-    try:
-        import io
-        import csv
-        from flask import Response
-
-        with get_db() as conn:
-            leads = conn.execute('''
-                SELECT
-                    id,
-                    business_name,
-                    phone,
-                    city,
-                    niche,
-                    rating,
-                    reviews_count,
-                    status,
-                    lifecycle_status,
-                    outreach_stage,
-                    click_count,
-                    last_clicked,
-                    last_contacted,
-                    followup_count,
-                    tracker_url,
-                    s3_url,
-                    created_at,
-                    outreach_paused,
-                    address
-                FROM leads
-                ORDER BY
-                    CASE lifecycle_status
-                        WHEN 'HOT'  THEN 1
-                        WHEN 'WARM' THEN 2
-                        WHEN 'NEW'  THEN 3
-                        ELSE 4
-                    END,
-                    click_count DESC
-            ''').fetchall()
-
-        output  = io.StringIO()
-        writer  = csv.writer(output)
-
-        # Header row
-        writer.writerow([
-            'Lead ID',
-            'Business Name',
-            'Phone',
-            'City',
-            'Niche',
-            'Rating',
-            'Reviews',
-            'Pipeline Status',
-            'Lead Status',
-            'Outreach Stage',
-            'Total Clicks',
-            'Last Seen',
-            'Last Contacted',
-            'Follow-ups Sent',
-            'Demo Site URL',
-            'Tracker URL',
-            'Added On',
-            'Paused',
-            'Address'
-        ])
-
-        # Stage label map
-        stage_labels = {
-            0: 'Not Started',
-            1: 'Cold Sent',
-            2: 'HOT Strike Sent',
-            3: 'Followup 1 Sent',
-            4: 'Followup 2 Sent',
-            5: 'Final Sent',
-        }
-
-        for lead in leads:
-            stage_num   = lead[9] or 0
-            stage_label = stage_labels.get(stage_num, f'Stage {stage_num}')
-            paused      = 'Yes' if lead[17] else 'No'
-
-            writer.writerow([
-                lead[0],   # id
-                lead[1],   # business_name
-                lead[2],   # phone
-                lead[3],   # city
-                lead[4],   # niche
-                lead[5],   # rating
-                lead[6],   # reviews_count
-                lead[7],   # status
-                lead[8],   # lifecycle_status
-                stage_label,
-                lead[10],  # click_count
-                lead[11],  # last_clicked
-                lead[12],  # last_contacted
-                lead[13],  # followup_count
-                lead[15],  # s3_url
-                lead[14],  # tracker_url
-                lead[16],  # created_at
-                paused,
-                lead[18],  # address
-            ])
-
-        output.seek(0)
-        date_str  = datetime.now().strftime('%Y-%m-%d')
-        filename  = f"ghost_worker_leads_{date_str}.csv"
-
-        return Response(
-            output.getvalue(),
-            mimetype    = 'text/csv',
-            headers     = {
-                'Content-Disposition': f'attachment; filename={filename}'
-            }
-        )
-
-    except Exception as e:
-        logger.error(f"Export error: {e}")
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/admin')
 @app.route('/admin/')
 @app.route('/')
@@ -1549,8 +1515,10 @@ def dashboard():
             leads_raw = conn.execute('''
                 SELECT * FROM leads
                 ORDER BY
+                  date(created_at) DESC,
+                  query_string,
                   CASE lifecycle_status
-                    WHEN 'HOT' THEN 1 WHEN 'WARM' THEN 2 WHEN 'NEW' THEN 3
+                    WHEN 'HOT'  THEN 1 WHEN 'WARM' THEN 2 WHEN 'NEW' THEN 3
                     WHEN 'Contacted' THEN 4 WHEN 'COLD' THEN 5
                     WHEN 'DEAD' THEN 6 ELSE 7 END,
                   click_count DESC, reviews_count DESC
