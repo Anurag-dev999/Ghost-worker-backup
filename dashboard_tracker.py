@@ -620,6 +620,75 @@ def health():
         return jsonify({"status":"error","error":str(e)}), 500
 
 
+@app.route('/api/export_leads')
+@auth_required
+def api_export_leads():
+    """Download leads as CSV for calling team."""
+    try:
+        import io
+        import csv
+        from flask import Response
+
+        with get_db() as conn:
+            leads = conn.execute('''
+                SELECT id, business_name, phone, city, niche,
+                       rating, reviews_count, status, lifecycle_status,
+                       outreach_stage, click_count, last_clicked,
+                       last_contacted, followup_count,
+                       s3_url, tracker_url, created_at,
+                       outreach_paused, address
+                FROM leads
+                ORDER BY
+                    CASE lifecycle_status
+                        WHEN 'HOT'  THEN 1
+                        WHEN 'WARM' THEN 2
+                        WHEN 'NEW'  THEN 3
+                        ELSE 4
+                    END,
+                    click_count DESC
+            ''').fetchall()
+
+        stage_labels = {
+            0: 'Not Started',
+            1: 'Cold Sent',
+            2: 'HOT Strike Sent',
+            3: 'Followup 1 Sent',
+            4: 'Followup 2 Sent',
+            5: 'Final Sent',
+        }
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            'Lead ID', 'Business Name', 'Phone', 'City', 'Niche',
+            'Rating', 'Reviews', 'Pipeline Status', 'Lead Status',
+            'Outreach Stage', 'Total Clicks', 'Last Seen',
+            'Last Contacted', 'Followups Sent', 'Demo Site URL',
+            'Tracker URL', 'Added On', 'Paused', 'Address'
+        ])
+
+        for l in leads:
+            writer.writerow([
+                l[0], l[1], l[2], l[3], l[4],
+                l[5], l[6], l[7], l[8],
+                stage_labels.get(l[9] or 0, f'Stage {l[9]}'),
+                l[10], l[11], l[12], l[13],
+                l[14], l[15], l[16],
+                'Yes' if l[17] else 'No',
+                l[18]
+            ])
+
+        output.seek(0)
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename=ghost_worker_leads_{date_str}.csv'}
+        )
+    except Exception as e:
+        logger.error(f"Export error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/webhook/whatsapp', methods=['POST'])
 def whatsapp_webhook():

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 APIFY_TOKEN   = os.getenv("APIFY_API_TOKEN")
 APIFY_TOKEN_2 = os.getenv("APIFY_API_TOKEN_2")
+APIFY_TOKEN_3 = os.getenv("APIFY_API_TOKEN_3")
 DB_PATH     = os.path.join(os.path.dirname(__file__), 'agency.db')
 
 
@@ -254,18 +255,23 @@ def run_scraper(query=None):
             logger.info(f"Apify account 1 OK — {len(raw_leads)} results")
         except Exception as e:
             logger.warning(f"Apify account 1 failed: {e}")
-            if APIFY_TOKEN_2:
+            fallback_tried = False
+            for token_name, token in [("2", APIFY_TOKEN_2), ("3", APIFY_TOKEN_3)]:
+                if not token:
+                    continue
                 try:
-                    logger.info("Trying Apify account 2 fallback...")
-                    client    = ApifyClient(APIFY_TOKEN_2)
+                    logger.info(f"Trying Apify account {token_name} fallback...")
+                    client    = ApifyClient(token)
                     run       = client.actor("compass/crawler-google-places").call(run_input=run_input)
                     raw_leads = list(client.dataset(run["defaultDatasetId"]).iterate_items())
-                    logger.info(f"Apify account 2 OK — {len(raw_leads)} results")
+                    logger.info(f"Apify account {token_name} returned {len(raw_leads)} results")
+                    fallback_tried = True
+                    break
                 except Exception as e2:
-                    logger.error(f"Apify account 2 also failed: {e2}")
+                    logger.error(f"Apify account {token_name} also failed: {e2}")
                     raw_leads = []
-            else:
-                logger.error("APIFY_API_TOKEN_2 not set — no fallback available")
+            if not fallback_tried and not raw_leads:
+                logger.error("All Apify accounts exhausted — no results")
                 raw_leads = []
         with open(CACHE_FILE, "w") as f:
             json.dump(raw_leads, f, indent=4)

@@ -2,9 +2,12 @@
   "scrape_interval_hours": 8,
   "lifecycle_check_hours": 6,
   "scheduled_queries": [
-    "cafes in ludhiana punjab INDIA",
     "cafes in delhi india",
-    "clinics in chandigrah india"
+    "cafes in noida uttar pradesh india",
+    "dental clinics in Lucknow India",
+    "dental clinics in chandigrah india",
+    "dental clinics in Delhi India",
+    "dental clinics in Pune Maharashtra India"
   ],
-  "last_updated": "2026-07-07 12:27:25"
+  "last_updated": "2026-07-22 21:59:57"
 }

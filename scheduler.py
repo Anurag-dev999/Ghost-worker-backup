@@ -121,125 +121,135 @@ def run_script(script_name, args=None, timeout=600):
 # SNIPER MISSION — runs one complete pipeline per interval
 # ═══════════════════════════════════════════════════════════
 
+_mission_running = False
+
 def job_run_mission():
-    """
-    The complete Ghost Worker mission for ONE query:
-    Scrape → AI → Build → Deploy → Write Messages → Send Outreach
-
-    Runs sequentially. Each step waits for the previous to finish.
-    One failure logs the error but tries to continue where possible.
-    """
-    query = get_next_query()
-    if not query:
-        logger.warning("Mission aborted — no query configured")
+    global _mission_running
+    if _mission_running:
+        logger.warning("Mission already in progress — skipping duplicate trigger")
         return
-
-    logger.info(f"\n{'='*60}")
-    logger.info(f"MISSION START: {query}")
-    logger.info(f"Time: {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
-    logger.info(f"{'='*60}")
-
-    mission_start = datetime.now()
-
-    # ── Step 1: Scrape ───────────────────────────────────
-    logger.info("STEP 1/6 — Scraping leads...")
-    scrape_ok = run_script('scraper.py', [query], timeout=300)
-    if not scrape_ok:
-        logger.error("Scrape failed — checking if existing leads need processing")
-
-    # Check if there's anything to process
-    with get_db() as conn:
-        pending_ai = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE status='Scraped'"
-        ).fetchone()[0]
-        pending_build = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE status='AI_Complete'"
-        ).fetchone()[0]
-        pending_deploy = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE status='Built'"
-        ).fetchone()[0]
-
-    logger.info(
-        f"Pipeline status — "
-        f"Scraped:{pending_ai} | "
-        f"AI_Complete:{pending_build} | "
-        f"Built:{pending_deploy}"
-    )
-
-    if pending_ai == 0 and pending_build == 0 and pending_deploy == 0:
-        logger.info("Nothing new to process — mission complete (no new leads)")
-        return
-
-    # ── Step 2: AI Brain ─────────────────────────────────
-    if pending_ai > 0:
-        logger.info(f"STEP 2/6 — AI Brain ({pending_ai} leads)...")
-        run_script('ai_brain.py', timeout=300)
-    else:
-        logger.info("STEP 2/6 — AI Brain skipped (no scraped leads)")
-
-    # ── Step 3: Builder ──────────────────────────────────
-    with get_db() as conn:
-        pending_build = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE status='AI_Complete'"
-        ).fetchone()[0]
-
-    if pending_build > 0:
-        logger.info(f"STEP 3/6 — Builder ({pending_build} leads)...")
-        run_script('builder.py', timeout=120)
-    else:
-        logger.info("STEP 3/6 — Builder skipped (no AI_Complete leads)")
-
-    # ── Step 4: S3 Deployer ──────────────────────────────
-    with get_db() as conn:
-        pending_deploy = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE status='Built'"
-        ).fetchone()[0]
-
-    if pending_deploy > 0:
-        logger.info(f"STEP 4/6 — S3 Deployer ({pending_deploy} leads)...")
-        run_script('s3_deployer.py', timeout=120)
-    else:
-        logger.info("STEP 4/6 — S3 Deployer skipped (no Built leads)")
-
-    # ── Step 5: Outreach Writer ──────────────────────────
-    with get_db() as conn:
-        needs_msgs = conn.execute('''
-            SELECT COUNT(*) FROM leads
-            WHERE status='Deployed'
-            AND (wa_draft_1 IS NULL OR wa_draft_1='')
-            AND (outreach_paused IS NULL OR outreach_paused=0)
-        ''').fetchone()[0]
-
-    if needs_msgs > 0:
-        logger.info(f"STEP 5/6 — Writing outreach messages ({needs_msgs} leads)...")
-        run_script('outreach_writer.py', timeout=300)
-    else:
-        logger.info("STEP 5/6 — Outreach Writer skipped (all messages written)")
-
-    # ── Step 6: Send outreach ────────────────────────────
-    logger.info("STEP 6/6 — Sending outreach messages...")
+    _mission_running = True
     try:
-        from outreach_engine import run_outreach_engine
-        run_outreach_engine()
-    except Exception as e:
-        logger.error(f"Outreach engine error: {e}")
+        """
+        The complete Ghost Worker mission for ONE query:
+        Scrape → AI → Build → Deploy → Write Messages → Send Outreach
 
-    # ── Mission summary ──────────────────────────────────
-    duration = (datetime.now() - mission_start).seconds
-    with get_db() as conn:
-        total    = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
-        deployed = conn.execute("SELECT COUNT(*) FROM leads WHERE status='Deployed'").fetchone()[0]
-        hot      = conn.execute("SELECT COUNT(*) FROM leads WHERE lifecycle_status='HOT'").fetchone()[0]
+        Runs sequentially. Each step waits for the previous to finish.
+        One failure logs the error but tries to continue where possible.
+        """
+        query = get_next_query()
+        if not query:
+            logger.warning("Mission aborted — no query configured")
+            return
 
-    logger.info(f"\n{'='*60}")
-    logger.info(f"MISSION COMPLETE: {query}")
-    logger.info(f"Duration : {duration}s")
-    logger.info(f"DB total : {total} leads | {deployed} deployed | {hot} HOT")
-    cfg = load_config()
-    queries = cfg.get('scheduled_queries', [])
-    interval = cfg.get('scrape_interval_hours', 8)
-    logger.info(f"Next mission in {interval}h")
-    logger.info(f"{'='*60}\n")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"MISSION START: {query}")
+        logger.info(f"Time: {datetime.now().strftime('%d %b %Y %H:%M:%S')}")
+        logger.info(f"{'='*60}")
+
+        mission_start = datetime.now()
+
+        # ── Step 1: Scrape ───────────────────────────────────
+        logger.info("STEP 1/6 — Scraping leads...")
+        scrape_ok = run_script('scraper.py', [query], timeout=300)
+        if not scrape_ok:
+            logger.error("Scrape failed — checking if existing leads need processing")
+
+        # Check if there's anything to process
+        with get_db() as conn:
+            pending_ai = conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE status='Scraped'"
+            ).fetchone()[0]
+            pending_build = conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE status='AI_Complete'"
+            ).fetchone()[0]
+            pending_deploy = conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE status='Built'"
+            ).fetchone()[0]
+
+        logger.info(
+            f"Pipeline status — "
+            f"Scraped:{pending_ai} | "
+            f"AI_Complete:{pending_build} | "
+            f"Built:{pending_deploy}"
+        )
+
+        if pending_ai == 0 and pending_build == 0 and pending_deploy == 0:
+            logger.info("Nothing new to process — mission complete (no new leads)")
+            return
+
+        # ── Step 2: AI Brain ─────────────────────────────────
+        if pending_ai > 0:
+            logger.info(f"STEP 2/6 — AI Brain ({pending_ai} leads)...")
+            run_script('ai_brain.py', timeout=300)
+        else:
+            logger.info("STEP 2/6 — AI Brain skipped (no scraped leads)")
+
+        # ── Step 3: Builder ──────────────────────────────────
+        with get_db() as conn:
+            pending_build = conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE status='AI_Complete'"
+            ).fetchone()[0]
+
+        if pending_build > 0:
+            logger.info(f"STEP 3/6 — Builder ({pending_build} leads)...")
+            run_script('builder.py', timeout=120)
+        else:
+            logger.info("STEP 3/6 — Builder skipped (no AI_Complete leads)")
+
+        # ── Step 4: S3 Deployer ──────────────────────────────
+        with get_db() as conn:
+            pending_deploy = conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE status='Built'"
+            ).fetchone()[0]
+
+        if pending_deploy > 0:
+            logger.info(f"STEP 4/6 — S3 Deployer ({pending_deploy} leads)...")
+            run_script('s3_deployer.py', timeout=120)
+        else:
+            logger.info("STEP 4/6 — S3 Deployer skipped (no Built leads)")
+
+        # ── Step 5: Outreach Writer ──────────────────────────
+        with get_db() as conn:
+            needs_msgs = conn.execute('''
+                SELECT COUNT(*) FROM leads
+                WHERE status='Deployed'
+                AND (wa_draft_1 IS NULL OR wa_draft_1='')
+                AND (outreach_paused IS NULL OR outreach_paused=0)
+            ''').fetchone()[0]
+
+        if needs_msgs > 0:
+            logger.info(f"STEP 5/6 — Writing outreach messages ({needs_msgs} leads)...")
+            run_script('outreach_writer.py', timeout=300)
+        else:
+            logger.info("STEP 5/6 — Outreach Writer skipped (all messages written)")
+
+        # ── Step 6: Send outreach ────────────────────────────
+        logger.info("STEP 6/6 — Sending outreach messages...")
+        try:
+            from outreach_engine import run_outreach_engine
+            run_outreach_engine()
+        except Exception as e:
+            logger.error(f"Outreach engine error: {e}")
+
+        # ── Mission summary ──────────────────────────────────
+        duration = (datetime.now() - mission_start).seconds
+        with get_db() as conn:
+            total    = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+            deployed = conn.execute("SELECT COUNT(*) FROM leads WHERE status='Deployed'").fetchone()[0]
+            hot      = conn.execute("SELECT COUNT(*) FROM leads WHERE lifecycle_status='HOT'").fetchone()[0]
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"MISSION COMPLETE: {query}")
+        logger.info(f"Duration : {duration}s")
+        logger.info(f"DB total : {total} leads | {deployed} deployed | {hot} HOT")
+        cfg = load_config()
+        queries = cfg.get('scheduled_queries', [])
+        interval = cfg.get('scrape_interval_hours', 8)
+        logger.info(f"Next mission in {interval}h")
+        logger.info(f"{'='*60}\n")
+    finally:
+        _mission_running = False
 
 
 # ═══════════════════════════════════════════════════════════
@@ -313,42 +323,77 @@ def job_backup():
         logger.error(f"Backup error: {e}")
 
 
-_last_config = {}
+_last_config    = {}
+_mission_job    = None
+_next_mission   = None
 
 def rebuild_schedule():
-    """Only rebuild if config actually changed — prevents timer drift."""
-    global _last_config
-    cfg = load_config()
+    """
+    Check config for changes every 30min.
+    NEVER clears mission timer — only updates background jobs.
+    """
+    global _last_config, _mission_job
+
+    cfg        = load_config()
     check_keys = ['scrape_interval_hours', 'lifecycle_check_hours', 'scheduled_queries']
-    changed = any(cfg.get(k) != _last_config.get(k) for k in check_keys)
-    if changed:
-        logger.info("Config changed — rebuilding schedule")
-        _last_config = {k: cfg.get(k) for k in check_keys}
-        build_schedule()
-    else:
+    changed    = any(cfg.get(k) != _last_config.get(k) for k in check_keys)
+
+    if not changed:
         logger.debug("Config unchanged — schedule kept")
+        return
+
+    logger.info("Config changed — updating jobs")
+
+    # Get OLD interval BEFORE updating _last_config
+    old_interval = _last_config.get('scrape_interval_hours', 8)
+    new_interval = cfg.get('scrape_interval_hours', 8)
+
+    # Now update last config
+    _last_config = {k: cfg.get(k) for k in check_keys}
+
+    # Cancel background jobs only — keep mission job
+    all_jobs = schedule.jobs.copy()
+    for job in all_jobs:
+        if job != _mission_job:
+            schedule.cancel_job(job)
+
+    # Re-register background jobs
+    life_h = cfg.get('lifecycle_check_hours', 6)
+    schedule.every(3).minutes.do(job_outreach_engine)
+    schedule.every(life_h).hours.do(job_lifecycle)
+    schedule.every(24).hours.do(job_backup)
+    schedule.every(30).minutes.do(rebuild_schedule)
+
+    # Update mission interval only if it actually changed
+    if new_interval != old_interval and _mission_job:
+        schedule.cancel_job(_mission_job)
+        _mission_job = schedule.every(new_interval).hours.do(job_run_mission)
+        logger.info(f"Mission interval updated: {old_interval}h → {new_interval}h")
+
+    queries = cfg.get('scheduled_queries', [])
+    logger.info(f"Jobs rebuilt | Mission timer preserved | Queue: {queries}")
 
 
 # ═══════════════════════════════════════════════════════════
 # SCHEDULE BUILDER
 # ═══════════════════════════════════════════════════════════
 
+_mission_job = None
+
 def build_schedule():
+    global _mission_job
     schedule.clear()
     cfg      = load_config()
     interval = cfg.get('scrape_interval_hours', 8)
     life_h   = cfg.get('lifecycle_check_hours', 6)
-    queries  = cfg.get('scheduled_queries', [])
 
     # ── Master mission timer ──────────────────────────────
-    schedule.every(interval).hours.do(job_run_mission)
+    _mission_job = schedule.every(interval).hours.do(job_run_mission)
 
     # ── Background tasks ──────────────────────────────────
     schedule.every(3).minutes.do(job_outreach_engine)
     schedule.every(life_h).hours.do(job_lifecycle)
     schedule.every(24).hours.do(job_backup)
-
-    # ── Config reload every 30 min ────────────────────────
     schedule.every(30).minutes.do(rebuild_schedule)
 
     logger.info(f"Schedule built:")
@@ -357,10 +402,11 @@ def build_schedule():
     logger.info(f"  Lifecycle       : every {life_h}h")
     logger.info(f"  DB backup       : every 24h")
     logger.info(f"  Config reload   : every 30min")
+    queries = cfg.get('scheduled_queries', [])
     if queries:
         logger.info(f"  Query queue ({len(queries)}): {queries}")
     else:
-        logger.warning("  No queries configured — add from dashboard")
+        logger.warning("  No queries configured")
 
 
 def run_startup_pipeline():

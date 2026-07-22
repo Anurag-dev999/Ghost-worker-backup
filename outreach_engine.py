@@ -406,18 +406,56 @@ def process_deletions(conn):
 
 # ── MAIN CYCLE ────────────────────────────────────────────
 
-LOCK_FILE = os.path.join(os.path.dirname(__file__), '.outreach.lock')
+LOCK_FILE    = os.path.join(os.path.dirname(__file__), '.outreach.lock')
+LOCK_TIMEOUT = 600  # 10 minutes — auto-expire stale locks
 
-def run_outreach_engine():
+
+def acquire_lock():
+    """Acquire lock. Auto-clears stale locks older than LOCK_TIMEOUT seconds."""
     if os.path.exists(LOCK_FILE):
-        logger.warning('Already running — skipping cycle')
-        return
-    open(LOCK_FILE, 'w').close()
-    logger.info('Outreach Engine — Starting cycle')
+        # Check if lock is stale
+        try:
+            lock_age = time.time() - os.path.getmtime(LOCK_FILE)
+            if lock_age > LOCK_TIMEOUT:
+                logger.warning(
+                    f"Stale lock detected ({lock_age:.0f}s old) — removing"
+                )
+                release_lock()
+            else:
+                logger.warning(
+                    f"Already running — skipping cycle "
+                    f"(lock age: {lock_age:.0f}s)"
+                )
+                return False
+        except Exception as e:
+            logger.error(f"Lock check error: {e}")
+            return False
 
     try:
-        with get_db() as conn:
+        with open(LOCK_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+        return True
+    except Exception as e:
+        logger.error(f"Could not create lock: {e}")
+        return False
 
+
+def release_lock():
+    """Release lock file."""
+    try:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
+    except Exception as e:
+        logger.error(f"Could not remove lock: {e}")
+
+
+def run_outreach_engine():
+    if not acquire_lock():
+        return
+    try:
+        logger.info('Outreach Engine — Starting cycle')
+        # 2. Database Session Context
+        with get_db() as conn:
             # Deletions first
             process_deletions(conn)
 
@@ -432,6 +470,7 @@ def run_outreach_engine():
 
             logger.info(f'Active leads: {len(leads)}')
 
+            # 3. Process Leads
             for lead in leads:
                 stage     = lead['outreach_stage'] or 0
                 lifecycle = lead['lifecycle_status'] or 'NEW'
@@ -439,7 +478,6 @@ def run_outreach_engine():
 
                 try:
                     # HOT leads — only send HOT strike, nothing else
-
                     if lifecycle == 'HOT':
                         if stage == 0:
                             stage_0_initial(conn, lead)
@@ -449,7 +487,7 @@ def run_outreach_engine():
                                 # HOT window passed — treat as normal followup
                                 stage_followup1(conn, lead)
                         elif stage == 2:
-                            stage_followup1(conn, lead)
+                            stage_followup2(conn, lead)  # Note: Check if this should be stage_followup2?
                         elif stage == 3:
                             stage_followup2(conn, lead)
                         elif stage == 4:
@@ -471,7 +509,7 @@ def run_outreach_engine():
                     elif stage == 1:
                         stage_followup1(conn, lead)
                     elif stage == 2:
-                        stage_followup1(conn, lead)
+                        stage_followup2(conn, lead)  # Note: Check if this should be stage_followup2?
                     elif stage == 3:
                         stage_followup2(conn, lead)
                     elif stage == 4:
@@ -485,9 +523,11 @@ def run_outreach_engine():
 
     except Exception as e:
         logger.error(f'Engine error: {e}')
+        
     finally:
+        # 4. Release Lock (Guaranteed to execute even if engine crashes)
         if os.path.exists(LOCK_FILE):
-            os.remove(LOCK_FILE)
+            release_lock()
 
 
 if __name__ == '__main__':

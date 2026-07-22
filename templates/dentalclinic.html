@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+   <meta charset="UTF-8">
+   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>{{BUSINESS_NAME}}</title>
+
+   <!-- font awesome cdn link  -->
+   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+   <!-- google fonts -->
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
+      rel="stylesheet">
+
+   <!-- AOS animation -->
+   <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+
+   <!-- bootstrap cdn link  -->
+   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.6.1/css/bootstrap.min.css">
+
+   <!-- custom css file link  -->
+   <link rel="stylesheet" href="https://ghostworkersites.s3.ap-south-1.amazonaws.com/assets/dental+clinics/style.css">
+   <link rel="icon" href="https://ghostworkersites.s3.ap-south-1.amazonaws.com/assets/dental+clinics/favicon.png" />
+
+</head>
+
+<body>
+
+   <!-- header section starts  -->
+   <header class="header fixed-top">
+      <div class="container">
+         <div class="row align-items-center justify-content-between">
+            <a href="#home" class="logo">{{BUSINESS_NAME}}<span>.</span></a>
+            <nav class="nav">
+               <a href="#home">home</a>
+               <a href="#about">about</a>
+               <a href="#services">services</a>
+               <a href="#reviews">reviews</a>
+               <a href="#contact">contact</a>
+            </nav>
+            <a href="{{TRACKER_URL}}" class="link-btn">make appointment</a>
+            <div id="menu-btn" class="fas fa-bars"></div>
+         </div>
+      </div>
+   </header>
+   <!-- header section ends -->
+
+   <!-- home section starts  -->
+   <section class="home" id="home">
+      <div class="container">
+         <div class="row min-vh-100 align-items-center">
+            <div class="content text-center text-md-left" data-aos="fade-up">
+               <h3>{{HERO_A}}</h3>
+               <a href="{{TRACKER_URL}}" class="link-btn">make appointment</a>
+            </div>
+         </div>
+      </div>
+   </section>
+   <!-- home section ends -->
+
+   <!-- about section starts  -->
+   <section class="about" id="about">
+      <div class="container">
+         <div class="row align-items-center">
+            <div class="col-md-6 image" data-aos="fade-right">
+               <img src="https://ghostworkersites.s3.ap-south-1.amazonaws.com/assets/dental+clinics/about-img.jpg"
+                  class="w-100 mb-5 mb-md-0" alt="">
+            </div>
+            <div class="col-md-6 content" data-aos="fade-left">
+               <span>about us</span>
+               <h3>Genuine Healthcare</h3>
+               <p>{{ABOUT_A}}</p>
+               <a href="{{TRACKER_URL}}" class="link-btn">make appointment</a>
+            </div>
+         </div>
+      </div>
+   </section>
+   <!-- about section ends -->
+
+   <!-- services section starts  -->
+   <section class="services" id="services">
+      <h1 class="heading" data-aos="fade-up">our services</h1>
+      <div id="services-data" style="display:none;">{{SERVICES_A}}</div>
+      <div class="box-container container" id="services-container" data-aos="fade-up" data-aos-delay="200">
+         <!-- Services will be populated dynamically by script.js -->
+      </div>
+   </section>
+   <!-- services section ends -->
+
+   <!-- process section starts  -->
+   <section class="process" data-aos="fade-up">
+      <h1 class="heading">work process</h1>
+      <div class="box-container container">
+         <div class="box" data-aos="flip-left" data-aos-delay="100">
+            <img src="https://ghostworkersites.s3.ap-south-1.amazonaws.com/assets/dental+clinics/process-1.png" alt="">
+            <h3>Cosmetic Dentistry</h3>
+            <p>Cosmetic dentistry includes teeth whitening, dental implants, dental crowns, and teeth shaping.</p>
+         </div>
+         <div class="box" data-aos="flip-left" data-aos-delay="200">
+            <img src="https://ghostworkersites.s3.ap-south-1.amazonaws.com/assets/dental+clinics/process-2.png" alt="">
+            <h3>Pediatric Dentistry</h3>
+            <p>Pediatric dentistry include stainless steel crowns, tooth-colored fillings, dental cleanings, and
+               cavities.</p>
+         </div>
+         <div class="box" data-aos="flip-left" data-aos-delay="300">
+            <img src="https://ghostworkersites.s3.ap-south-1.amazonaws.com/assets/dental+clinics/process-3.png" alt="">
+            <h3>Dental Implants</h3>
+            <p>Dental implants are artificial tooth roots that are surgically placed into the jawbone.</p>
+         </div>
+      </div>
+   </section>
+   <!-- process section ends -->
+
+   <!-- reviews section starts  -->
+   <section class="reviews" id="reviews">
+      <h1 class="heading" data-aos="fade-up"> Our Clients </h1>
+      <p class="text-center" style="font-size: 2rem; color: var(--blue); margin-top:-2rem; margin-bottom: 4rem;"
+         data-aos="fade-up">⭐ {{RATING}}/5 based on {{REVIEWS_COUNT}} reviews</p>
+
+      <div class="box-container container">
+         <div class="box" data-aos="zoom-in" data-aos-delay="100">
+            <img src="https://images.unsplash.com/photo-1618077360395-f3068be8e001?auto=format&fit=crop&w=256&q=80"
+               alt="Rahul Sharma">
+            <p> I couldn't believe that it was so affordable compared to the alternatives available in the market.</p>
+            <div class="stars">
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star-half-alt"></i>
+            </div>
+            <h3>Rahul Sharma</h3>
+            <span>Manager</span>
+         </div>
+         <div class="box" data-aos="zoom-in" data-aos-delay="200">
+            <img src="https://images.unsplash.com/photo-1592621385612-4d7129426394?auto=format&fit=crop&w=256&q=80"
+               alt="Priya Patel">
+            <p>Earlier I used to hide my smile and now I can't stop smiling. The aligners changed my life & smile
+               completely.</p>
+            <div class="stars">
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star-half-alt"></i>
+            </div>
+            <h3>Priya Patel</h3>
+            <span>Assistant Manager</span>
+         </div>
+         <div class="box" data-aos="zoom-in" data-aos-delay="300">
+            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80"
+               alt="Amit Kumar">
+            <p>Great experience with {{BUSINESS_NAME}}. I would recommend this place for they have the best quality
+               service</p>
+            <div class="stars">
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star"></i>
+               <i class="fas fa-star-half-alt"></i>
+            </div>
+            <h3>Amit Kumar</h3>
+            <span>CEO</span>
+         </div>
+      </div>
+   </section>
+   <!-- reviews section ends -->
+
+   <!-- contact section starts  -->
+   <section class="contact" id="contact">
+      <h1 class="heading" data-aos="fade-up">make appointment</h1>
+
+      <form id="appointment-form" data-aos="fade-up" data-aos-delay="200">
+         <div id="form-success" style="display: none; text-align: center; margin-bottom: 2rem;">
+            <i class="fas fa-check-circle" style="font-size: 5rem; color: #28a745; margin-bottom: 1rem;"></i>
+            <h3 style="font-size: 2.5rem; color: var(--black);">Appointment Successfully Booked!</h3>
+         </div>
+         <div id="form-fields">
+            <span>Enter your name :</span>
+            <input type="text" name="name" placeholder="Enter your name" class="box" required>
+            <span>Enter your email :</span>
+            <input type="email" name="email" placeholder="Enter your email" class="box" required>
+            <span>Enter your number :</span>
+            <input type="number" name="number" placeholder="Enter your number" class="box" required>
+            <span>Enter appointment date :</span>
+            <input type="datetime-local" name="date" class="box" required>
+            <button type="submit" class="link-btn" style="width: 100%;">make appointment</button>
+         </div>
+      </form>
+   </section>
+   <!-- contact section ends -->
+
+   <!-- footer section starts  -->
+   <section class="footer" data-aos="fade-up">
+      <div class="box-container container">
+         <div class="box">
+            <i class="fas fa-phone"></i>
+            <h3>phone number</h3>
+            <p><a href="https://wa.me/{{PHONE_CLEAN}}" style="color: inherit;">+{{PHONE_CLEAN}}</a></p>
+         </div>
+         <div class="box">
+            <i class="fas fa-map-marker-alt"></i>
+            <h3>our address</h3>
+            <p>{{ADDRESS}}</p>
+            <p>{{CITY}}</p>
+         </div>
+         <div class="box">
+            <i class="fas fa-clock"></i>
+            <h3>opening hours</h3>
+            <p>10:00am to 07:00pm</p>
+         </div>
+         <div class="box">
+            <i class="fas fa-info-circle"></i>
+            <h3>about us</h3>
+            <p>{{FOOTER_TEXT}}</p>
+         </div>
+      </div>
+      <div class="credit"> &copy; <span id="current-year"></span> <span>{{BUSINESS_NAME}}</span> All Reserved Rights
+      </div>
+   </section>
+   <!-- footer section ends -->
+
+   <!-- Floating WhatsApp Button -->
+   <a href="https://wa.me/{{PHONE_CLEAN}}" class="whatsapp-float" target="_blank" data-aos="zoom-in"
+      data-aos-delay="500">
+      <i class="fab fa-whatsapp"></i>
+   </a>
+
+   <!-- AOS JS -->
+   <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+   <script>
+      AOS.init({
+         duration: 800,
+         offset: 100,
+         once: true
+      });
+   </script>
+
+   <!-- custom js file link  -->
+   <script src="https://ghostworkersites.s3.ap-south-1.amazonaws.com/assets/dental clinics/script.js"></script>
+</body>
+
+</html>
