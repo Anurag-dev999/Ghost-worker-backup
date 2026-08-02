@@ -115,7 +115,7 @@ def build_prompt(lead, msg_type, channel):
         
         base_wa_rules = """RULES:
 - Language: Natural Hinglish (Roman Hindi mixed with English).
-- Tone: Friendly, respectful, energetic. Like a real person texting on WhatsApp.
+- Tone: Friendly, respectful, professional, energetic. Like a real person texting on WhatsApp.
 - NO formal greetings (No "Dear Sir", "Greetings").
 - Emojis: Max 1 or 2, placed naturally.
 - Output: Return ONLY the message text. No quotes, no intro, no extra text."""
@@ -125,16 +125,27 @@ def build_prompt(lead, msg_type, channel):
 {context}
 
 TONE REFERENCE (Mimic this exact style):
-"Hello [Business Name] team!
-Maine abhi aapka business dekha online aur aapke reviews sach mein kaafi amazing hain. Great job! 🔥
-Mujhe laga aapke business ki online presence aur bhi better ho sakti hai, toh maine aapke liye ek custom, fast-loading website banayi hai—bilkul free.
-Website already live aur ready hai. Aap yahan click karke free mein apna naya design dekh sakte hain: [Insert Your Link Here]
-Zaroor check karna aur batana kaisa laga!"
+"Hey {short_name} team,
 
-Now, write the message for {short_name} using the exact tone above. 
-- Mention their {reviews} reviews and {rating} stars specifically to make it personal.
+Just saw {short_name} on Google—{rating} stars, {reviews} reviews. Solid! ⭐
+
+Most local {niche} with your rep actually lose 40% of calls because prospects can't find key info (hours, services, booking).
+
+Built a quick site for a {niche} in {city} last month. They got 8 inquiries in week 1 from people who couldn't reach them before.
+
+Worth a 2-min look? {tracker} "
+
+
+Now, write the message for {short_name} using the exact structure and tone above.
+- Do NOT use "free" anywhere.
+- Do NOT use generic praise like "amazing" or "great job" — go straight to the pain point.
+- Lead with THEIR problem (lost calls/inquiries), not your solution.
+- Include one specific proof number (inquiries/calls) like the example.
+- Mention their {reviews} reviews and {rating} stars naturally in the opener.
 - Naturally include the demo link: {tracker}
 {base_wa_rules}"""
+
+
 
         elif msg_type == 'hot':
             return f"""Write a 'Hot Strike' WhatsApp message to {short_name}.

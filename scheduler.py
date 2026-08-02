@@ -323,6 +323,17 @@ def job_backup():
         logger.error(f"Backup error: {e}")
 
 
+def job_analytics_sync():
+    """Every 4 days — sync all lead data to Google Sheets."""
+    logger.info("JOB: Analytics Sync → Google Sheets")
+    try:
+        from analytics_sync import run_sync
+        run_sync()
+    except Exception as e:
+        logger.error(f"Analytics sync error: {e}")
+
+
+
 _last_config    = {}
 _mission_job    = None
 _next_mission   = None
@@ -395,6 +406,8 @@ def build_schedule():
     schedule.every(life_h).hours.do(job_lifecycle)
     schedule.every(24).hours.do(job_backup)
     schedule.every(30).minutes.do(rebuild_schedule)
+    schedule.every(4).days.do(job_analytics_sync)
+
 
     logger.info(f"Schedule built:")
     logger.info(f"  Sniper mission  : every {interval}h")
@@ -402,6 +415,8 @@ def build_schedule():
     logger.info(f"  Lifecycle       : every {life_h}h")
     logger.info(f"  DB backup       : every 24h")
     logger.info(f"  Config reload   : every 30min")
+    logger.info(f"  Analytics sync  : every 4 days")
+
     queries = cfg.get('scheduled_queries', [])
     if queries:
         logger.info(f"  Query queue ({len(queries)}): {queries}")

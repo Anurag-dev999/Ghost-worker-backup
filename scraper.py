@@ -38,9 +38,9 @@ DB_PATH     = os.path.join(os.path.dirname(__file__), 'agency.db')
 
 
 DEFAULT_QUERY = "dental clinics in Ludhiana Punjab India"
-MIN_REVIEWS   = 30
-MIN_RATING    = 4.0
-TOP_WHALES    = 5
+MIN_REVIEWS   = 130
+MIN_RATING    = 4.3
+TOP_WHALES    = 6
 
 # Social media URLs that don't count as a real website
 SOCIAL_DOMAINS = [

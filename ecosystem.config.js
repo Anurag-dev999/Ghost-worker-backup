@@ -7,7 +7,9 @@ module.exports = {
       cwd         : "/home/ubuntu/ghost_worker",
       interpreter : "none",
       autorestart : true,
-      max_restarts: 10,
+      max_restarts: 50,
+      min_uptime  : "5s",
+      restart_delay: 3000,
       watch       : false,
       env         : {
         PATH : "/home/ubuntu/ghost_worker/ghostenv/bin:/usr/bin:/bin"
@@ -23,7 +25,9 @@ module.exports = {
       cwd         : "/home/ubuntu/ghost_worker",
       interpreter : "none",
       autorestart : true,
-      max_restarts: 10,
+      min_uptime  : "10s",
+      restart_delay: 5000,
+      max_restarts: 50,
       watch       : false,
       env         : {
         PATH : "/home/ubuntu/ghost_worker/ghostenv/bin:/usr/bin:/bin"
