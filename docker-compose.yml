@@ -1,4 +1,6 @@
-cat > ~/ghost_worker/docker-compose.yml << 'EOF'
+rm ~/ghost_worker/docker-compose.yml
+
+cat > ~/ghost_worker/docker-compose.yml << 'ENDOFFILE'
 services:
   ghost-dashboard:
     image: ghcr.io/anurag-dev999/ghost-worker-dashboard:latest
@@ -20,13 +22,6 @@ services:
     restart: always
     networks:
       - ghost-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
   ghost-scheduler:
     image: ghcr.io/anurag-dev999/ghost-worker-scheduler:latest
     container_name: ghost-scheduler
@@ -44,13 +39,13 @@ services:
       - ./raw_leads.json:/app/raw_leads.json
       - ./google_credentials.json:/app/google_credentials.json
     restart: always
-    healthcheck:
-      disable: true
     networks:
       - ghost-network
-
 networks:
   ghost-network:
     driver: bridge
     name: ghost-network
-EOF
+ENDOFFILE
+
+# Verify
+cat ~/ghost_worker/docker-compose.yml
