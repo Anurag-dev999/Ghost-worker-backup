@@ -1,6 +1,4 @@
-rm ~/ghost_worker/docker-compose.yml
 
-cat > ~/ghost_worker/docker-compose.yml << 'ENDOFFILE'
 services:
   ghost-dashboard:
     image: ghcr.io/anurag-dev999/ghost-worker-dashboard:latest
@@ -22,6 +20,7 @@ services:
     restart: always
     networks:
       - ghost-network
+
   ghost-scheduler:
     image: ghcr.io/anurag-dev999/ghost-worker-scheduler:latest
     container_name: ghost-scheduler
@@ -41,11 +40,9 @@ services:
     restart: always
     networks:
       - ghost-network
+
 networks:
   ghost-network:
     driver: bridge
     name: ghost-network
-ENDOFFILE
-
-# Verify
-cat ~/ghost_worker/docker-compose.yml
+EOF
